@@ -60,7 +60,23 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Actualizar y reiniciar el contenedor de la API en el VPS
+      - uses: actions/checkout@v4
+
+      # Sin este paso, docker-compose.prod.yml en el VPS queda huérfano del
+      # que vive en el repo — cualquier cambio ahí (agregar un servicio,
+      # tocar env vars) requeriría copiarlo a mano de nuevo. El repo es la
+      # única fuente de verdad; esto lo mantiene sincronizado en cada deploy.
+      - name: Sincronizar docker-compose.prod.yml al VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "docker-compose.prod.yml"
+          target: "/var/www/god-edu"
+          overwrite: true
+
+      - name: Actualizar y reiniciar los contenedores en el VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -69,14 +85,17 @@ jobs:
           script: |
             cd /var/www/god-edu
 
-            # Trae la imagen recién publicada. Solo la de /api: postgres no
-            # se toca en absoluto en un deploy normal.
-            docker compose -f docker-compose.prod.yml pull api
+            # Trae la imagen de la API recién publicada (postgres/cloudflared
+            # no cambian de tag, así que su pull es un no-op la mayoría de
+            # las veces).
+            docker compose -f docker-compose.prod.yml pull
 
-            # Recrea únicamente el contenedor de la API (--no-deps: no
-            # reinicia postgres). Las migraciones corren solas al arrancar
-            # el binario nuevo (ver api/db/migrate.go) — no hace falta
-            # ningún paso extra acá para la base de datos.
-            docker compose -f docker-compose.prod.yml up -d --no-deps api
+            # "up -d" reconcilia contra el archivo: solo recrea los
+            # contenedores cuya config cambió (o los crea si son nuevos, como
+            # cloudflared recién). Postgres queda intacto salvo que su propia
+            # definición cambie — no hace falta "--no-deps" a mano, Compose
+            # ya hace ese diff solo. Las migraciones corren solas al
+            # arrancar el binario nuevo (ver api/db/migrate.go).
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             docker image prune -f
