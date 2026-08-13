@@ -15,6 +15,6 @@ export default defineConfig({
   integrations: [react()],
 
   adapter: cloudflare({
-    imageService: 'cloudflare-binding'
+    imageService: 'passthrough'
   }),
 });
