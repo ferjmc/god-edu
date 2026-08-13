@@ -26,6 +26,16 @@ export function initAuth(): Promise<void> {
 			.then((user) => {
 				$auth.set(user ? { status: "authenticated", user } : { status: "anonymous" });
 			})
+			.catch((err) => {
+				// Cualquier falla que no sea un 401 limpio (CORS bloqueado, red
+				// caída, timeout, un 500) no debe dejar el spinner girando para
+				// siempre — mejor tratarla como sesión anónima: el usuario ve
+				// "Ingresar/Registrarse" en vez de quedar colgado sin ninguna
+				// pista de qué pasó. me() ya distingue el 401 real (sesión
+				// simplemente no iniciada) de esto (algo se rompió).
+				console.error("initAuth: no se pudo resolver la sesión", err);
+				$auth.set({ status: "anonymous" });
+			})
 			.finally(() => {
 				inFlight = null;
 			});
