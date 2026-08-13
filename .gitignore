@@ -11,3 +11,5 @@ api/*.exe
 
 # OS
 .DS_Store
+
+.wrangler
