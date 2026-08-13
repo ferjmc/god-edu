@@ -6,7 +6,8 @@
 #
 # Setup inicial en el VPS (una sola vez):
 #   mkdir -p /var/www/god-edu && cd /var/www/god-edu
-#   # copiar este archivo y un .env con todas las variables (ver .env.example)
+#   # copiar este archivo y un .env con todas las variables (ver .env.example,
+#   # incluye TUNNEL_TOKEN — se genera en el dashboard de Cloudflare Zero Trust)
 #   docker compose -f docker-compose.prod.yml up -d
 services:
   postgres:
@@ -45,11 +46,26 @@ services:
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET: ${R2_BUCKET}
       R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL}
-    ports:
-      - "${API_PORT}:${API_PORT}"
+    # Sin "ports": nada expone la API directamente al VPS/internet. El único
+    # camino de entrada es el túnel (ver servicio "cloudflared" abajo), que
+    # la alcanza por la red interna de Docker usando el nombre del servicio
+    # ("api"), no localhost. Menos superficie expuesta que con Caddy.
     depends_on:
       postgres:
         condition: service_healthy
+
+  # cloudflared abre una conexión saliente hacia Cloudflare (no escucha
+  # ningún puerto entrante) y les hace de túnel a las requests que llegan a
+  # api.tudominio.org. El ruteo hostname → servicio interno se configura en
+  # el dashboard de Cloudflare Zero Trust (Networks → Tunnels), no acá — el
+  # token es lo único que necesita este contenedor para saber a qué túnel
+  # conectarse.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

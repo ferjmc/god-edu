@@ -19,9 +19,9 @@ Una plataforma educativa online, similar en función a Thinkific, para publicar 
 ## Stack técnico (decidido, no reabrir esta discusión sin razón fuerte)
 
 - **Frontend**: Astro + TypeScript. Sitio mayormente estático. Desplegado en **Cloudflare Pages** (gratis, sin límite práctico de ancho de banda, sin restricción de uso comercial).
-- **Backend**: Go. API REST/JSON. Desplegado como contenedor Docker en un **VPS Hetzner** (2 vCPU/4GB), administrado con **Coolify o Dokploy** para tener despliegues tipo git-push.
+- **Backend**: Go. API REST/JSON. Desplegado como contenedor Docker en un **VPS Hetzner** (2 vCPU/4GB). Deploy vía GitHub Actions: build de la imagen en el runner de GitHub (no en el VPS, que tiene poco recursos) → push a GitHub Container Registry → el VPS solo hace `pull` + reinicia el contenedor por SSH. Se evaluó Coolify/Dokploy (mencionados en una versión anterior de este documento) pero se optó por manejarlo a mano con GitHub Actions — decisión explícita del usuario, no hay que reabrirla sin razón fuerte tampoco. Ver `.github/workflows/deploy.yml` y `docker-compose.prod.yml`.
 - **Base de datos**: PostgreSQL, corriendo en el mismo VPS (o Postgres gestionado barato si el usuario lo prefiere más adelante).
-- **Reverse proxy / HTTPS**: Caddy (o lo que gestione Coolify/Dokploy internamente).
+- **Reverse proxy / HTTPS**: **Cloudflare Tunnel** (`cloudflared`), no Caddy. El túnel abre la conexión desde el VPS hacia Cloudflare (no hay puertos entrantes expuestos en el VPS para la API), Cloudflare termina el TLS y gestiona el DNS del subdominio automáticamente. Se descartó Caddy a propósito: un componente menos para mantener a mano (sin renovación de certificados, sin firewall que administrar para el puerto de la API).
 - **Autenticación**: implementación propia en Go usando `markbates/goth` para OAuth (Google, Facebook) + email/contraseña con bcrypt. Sesión vía JWT en cookie `httpOnly`, `Secure`, `SameSite=Lax`. Nunca tokens en `localStorage`.
 - **Storage de archivos**: Cloudflare R2 (API compatible S3).
 - **Email transaccional**: Resend (capa gratis) para verificación de cuenta y reseteo de contraseña.
