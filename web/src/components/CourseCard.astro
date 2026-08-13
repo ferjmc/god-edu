@@ -1,0 +1,23 @@
+---
+import type { Course } from "../lib/api/courses";
+
+interface Props {
+	course: Course;
+}
+
+const { course } = Astro.props;
+---
+
+<article class="rounded-[4px] border border-ink-15 bg-paper p-6 shadow-gold-edge">
+	<span class="mb-3 block h-0.5 w-8 bg-liturgical-gold" aria-hidden="true"></span>
+	<h3 class="font-display text-xl font-semibold text-ink">{course.title}</h3>
+	{course.description && (
+		<p class="mt-2 font-serif text-sm leading-relaxed text-ink-80">{course.description}</p>
+	)}
+	<a
+		href={`/cursos/${course.slug}`}
+		class="mt-4 inline-block font-ui text-sm text-marian-blue hover:text-marian-blue-deep"
+	>
+		Ver curso →
+	</a>
+</article>

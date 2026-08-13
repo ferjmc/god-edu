@@ -1,0 +1,159 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+const cards = [
+	{
+		eyebrow: "Apoyo psicológico",
+		title: "Acompañamiento clínico",
+		body: "Atención profesional con formación de fe. Citas presenciales y en línea.",
+	},
+	{
+		eyebrow: "Formación",
+		title: "Cursos online, a tu ritmo",
+		body: "Video y material en PDF organizados en lecciones breves sobre la fe católica. Empezá cuando quieras, desde donde estés.",
+		href: "/cursos",
+		linkLabel: "Ver cursos",
+	},
+	{
+		eyebrow: "Comunidad",
+		title: "Capacitaciones y conferencias",
+		body: "Encuentros y charlas para seguir formándote junto a otros miembros de la comunidad.",
+		badge: "Próximamente",
+	},
+];
+
+// Mock — todavía no hay una feature de eventos (agenda/inscripción) en el
+// backend. Estos datos son de ejemplo para ver la sección maquetada.
+const events = [
+	{ dow: "VIE", day: "14", title: "Hora Santa", meta: "7:00 PM · Capilla", live: true },
+	{ dow: "DOM", day: "16", title: "Coronilla por los enfermos", meta: "3:00 PM · Transmisión en vivo" },
+	{ dow: "MIÉ", day: "19", title: "Charla: Fe y vocación", meta: "7:00 PM · Salón parroquial" },
+];
+---
+
+<Layout title="Comunidad La Divina Misericordia">
+	<main>
+		<!-- Hero -->
+		<section class="hero-aurora relative isolate flex min-h-[480px] items-center overflow-hidden sm:min-h-[560px]">
+			<div
+				class="hero-halo pointer-events-none absolute top-[-12%] left-[calc(50%-380px)] h-[560px] w-[560px] rounded-full"
+				aria-hidden="true"
+			>
+			</div>
+			<div class="relative mx-auto w-full max-w-[1180px] px-6 py-16 sm:py-20">
+				<span
+					class="font-ui inline-flex items-center gap-3 text-xs font-semibold tracking-[0.16em] text-marian-blue uppercase"
+				>
+					<span class="h-0.5 w-8 bg-liturgical-gold" aria-hidden="true"></span>
+					Comunidad Católica Divina Misericordia
+				</span>
+				<h1 class="mt-4 font-display text-4xl leading-tight text-marian-blue-deep sm:text-5xl lg:text-6xl">
+					Jesús, en Ti confío.
+				</h1>
+				<p class="mt-5 max-w-[560px] font-serif text-lg leading-relaxed text-ink-80">
+					Formación católica online: cursos en video y material descargable para crecer en la fe, a
+					tu ritmo.
+				</p>
+				<div class="mt-8 flex flex-wrap gap-4">
+					<a href="/cursos" class="btn btn-cta">Ver los cursos</a>
+					<a
+						href="/registro"
+						class="btn btn-outline border-liturgical-gold text-marian-blue-deep hover:bg-liturgical-gold/10"
+					>
+						Crear cuenta
+					</a>
+				</div>
+			</div>
+		</section>
+
+		<!-- Qué encontrás acá -->
+		<section class="mx-auto max-w-[1180px] px-6 py-16 sm:py-20">
+			<span class="mb-3 block h-0.5 w-10 bg-liturgical-gold" aria-hidden="true"></span>
+			<span class="font-ui text-xs font-semibold tracking-[0.16em] text-marian-blue uppercase">
+				Qué encontrás acá
+			</span>
+			<h2 class="mt-2 font-display text-3xl text-marian-blue-deep sm:text-4xl">
+				Tres caminos para crecer en la fe.
+			</h2>
+
+			<div class="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+				{
+					cards.map((card) => (
+						<article class="flex flex-col rounded-[4px] border border-ink-15 bg-paper p-6 shadow-gold-edge">
+							<span class="mb-3 block h-0.5 w-8 bg-liturgical-gold" aria-hidden="true" />
+							<span class="font-ui text-xs font-semibold tracking-[0.14em] text-marian-blue uppercase">
+								{card.eyebrow}
+							</span>
+							<h3 class="mt-2 font-display text-xl font-semibold text-ink">{card.title}</h3>
+							<p class="mt-2 font-serif text-sm leading-relaxed text-ink-80">{card.body}</p>
+							{card.href && (
+								<a
+									href={card.href}
+									class="mt-4 font-ui text-sm text-marian-blue hover:text-marian-blue-deep"
+								>
+									{card.linkLabel} →
+								</a>
+							)}
+							{card.badge && (
+								<span class="mt-4 inline-flex w-fit rounded-full border border-ink-15 px-3 py-1 font-ui text-[11px] font-semibold tracking-[0.1em] text-ink-60 uppercase">
+									{card.badge}
+								</span>
+							)}
+						</article>
+					))
+				}
+			</div>
+		</section>
+
+		<!-- Palabras de la Divina Misericordia -->
+		<section class="border-y border-ink-15 bg-paper-warm">
+			<div class="mx-auto max-w-[880px] px-6 py-16 text-center sm:py-20">
+				<span class="mx-auto block h-0.5 w-10 bg-liturgical-gold" aria-hidden="true"></span>
+				<p class="mt-6 font-display text-2xl leading-snug text-marian-blue italic sm:text-3xl">
+					«Dile a las almas que de la fuente de Mi misericordia saquen las gracias únicamente con
+					el recipiente de la confianza.»
+				</p>
+				<cite class="mt-4 block font-ui text-xs font-semibold tracking-[0.14em] text-ink-60 not-italic uppercase">
+					Diario de Santa Faustina · 1602
+				</cite>
+			</div>
+		</section>
+
+		<!-- Próximos encuentros (mock, ver nota en el frontmatter) -->
+		<section class="mx-auto max-w-[1180px] px-6 py-16 sm:py-20">
+			<span class="mb-3 block h-0.5 w-10 bg-liturgical-gold" aria-hidden="true"></span>
+			<span class="font-ui text-xs font-semibold tracking-[0.16em] text-marian-blue uppercase">
+				Próximos encuentros
+			</span>
+			<h2 class="mt-2 font-display text-3xl text-marian-blue-deep sm:text-4xl">
+				Camina con nosotros esta semana.
+			</h2>
+
+			<div class="mt-10 flex flex-col border-t border-ink-15">
+				{
+					events.map((event) => (
+						<div class="grid grid-cols-[56px_1fr_auto] items-center gap-4 border-b border-ink-15 py-6 sm:grid-cols-[90px_1fr_auto] sm:gap-6">
+							<div class="flex flex-col items-center border-r border-ink-15 pr-3 sm:pr-6">
+								<span class="font-ui text-xs font-semibold tracking-[0.14em] text-sacred-red">
+									{event.dow}
+								</span>
+								<span class="font-display text-3xl leading-none text-marian-blue sm:text-4xl">
+									{event.day}
+								</span>
+							</div>
+							<div>
+								<h3 class="font-display text-xl font-semibold text-ink sm:text-2xl">{event.title}</h3>
+								<span class="font-ui text-xs tracking-[0.04em] text-ink-60">{event.meta}</span>
+							</div>
+							{event.live && (
+								<span class="rounded-[2px] bg-sacred-red px-2.5 py-1 font-ui text-xs font-semibold tracking-[0.14em] whitespace-nowrap text-mercy-white uppercase">
+									● En vivo
+								</span>
+							)}
+						</div>
+					))
+				}
+			</div>
+		</section>
+	</main>
+</Layout>

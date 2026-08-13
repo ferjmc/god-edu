@@ -1,0 +1,44 @@
+---
+import Layout from "../../../layouts/Layout.astro";
+import LessonDetail from "../../../components/LessonDetail";
+import { listCourses } from "../../../lib/api/courses";
+
+export async function getStaticPaths() {
+	// GET /courses/{slug}/lessons (el listado real) requiere sesión, y acá
+	// no hay ningún usuario logueado — este código corre en build time, sin
+	// cookie. Por eso no podemos generar el número exacto de rutas leyendo
+	// la currícula real de cada curso: generamos un tope fijo de páginas
+	// (ver CLAUDE.md: "8 lecciones cada uno") y confiamos en que
+	// LessonDetail, del lado del cliente, ya maneja con gracia pedir una
+	// lección que no existe (404 → "No encontramos esa lección"). Si algún
+	// curso llega a tener más de 8 lecciones, subir este número; si eso se
+	// vuelve algo frecuente, vale la pena reconsiderar sacar esta ruta del
+	// modo estático (SSR/hybrid), pero es un cambio de infraestructura
+	// aparte, no algo para decidir acá.
+	// (Declarada acá adentro, no a nivel de módulo: Astro aísla
+	// getStaticPaths en su propio chunk al compilar y no capturaba una
+	// const definida afuera — daba "LESSONS_PER_COURSE is not defined" en
+	// build, silencioso en dev porque el catch de abajo se lo tragaba.)
+	const LESSONS_PER_COURSE = 8;
+
+	try {
+		const courses = await listCourses();
+		return courses.flatMap((course) =>
+			Array.from({ length: LESSONS_PER_COURSE }, (_, i) => ({
+				params: { slug: course.slug, leccion: String(i + 1) },
+			})),
+		);
+	} catch (err) {
+		console.error("cursos/[slug]/[leccion]: no se pudo obtener el listado para getStaticPaths", err);
+		return [];
+	}
+}
+
+const { slug, leccion } = Astro.params;
+---
+
+<Layout title="Lección — Comunidad La Divina Misericordia">
+	<main class="mx-auto max-w-[1180px] px-6 py-16">
+		<LessonDetail courseSlug={slug} lessonNumber={Number(leccion)} client:load />
+	</main>
+</Layout>

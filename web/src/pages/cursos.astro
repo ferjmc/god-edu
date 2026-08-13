@@ -1,0 +1,35 @@
+---
+import Layout from "../layouts/Layout.astro";
+import CourseCard from "../components/CourseCard.astro";
+import { listCourses, type Course } from "../lib/api/courses";
+
+let courses: Course[] = [];
+let loadError = false;
+try {
+	courses = await listCourses();
+} catch (err) {
+	console.error("cursos: no se pudo obtener el listado", err);
+	loadError = true;
+}
+---
+
+<Layout title="Cursos — Comunidad La Divina Misericordia">
+	<main class="mx-auto max-w-[1180px] px-6 py-16">
+		<h1 class="font-display text-3xl text-marian-blue-deep">Cursos</h1>
+		<p class="mt-2 max-w-[680px] font-serif text-ink-80">
+			Formación en la fe católica, a tu ritmo — video, lecturas y material para profundizar.
+		</p>
+
+		{loadError ? (
+			<p class="mt-10 font-ui text-sm text-sacred-red">
+				No pudimos cargar los cursos. Probá de nuevo en un momento.
+			</p>
+		) : courses.length === 0 ? (
+			<p class="mt-10 font-ui text-sm text-ink-60">Todavía no hay cursos publicados.</p>
+		) : (
+			<div class="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+				{courses.map((course) => <CourseCard course={course} />)}
+			</div>
+		)}
+	</main>
+</Layout>

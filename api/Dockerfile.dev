@@ -1,0 +1,13 @@
+FROM golang:1.25-alpine
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# El código fuente se monta como volumen desde docker-compose.yml, así que
+# esta copia solo sirve para el build inicial de la imagen (cache de módulos).
+# Para ver cambios de código: docker compose restart api
+CMD ["go", "run", "."]

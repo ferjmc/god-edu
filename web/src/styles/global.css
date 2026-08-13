@@ -1,0 +1,235 @@
+/*
+ * Global styles: Tailwind v4 + daisyUI, themed from the
+ * Divina Misericordia design system (colors_and_type.css tokens).
+ */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* Brand tokens available as Tailwind utilities (bg-marian-blue, text-ink-60, font-display, ...) */
+@theme {
+	--font-display: "Cormorant Garamond", "Garamond", "Times New Roman", serif;
+	--font-serif: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+	--font-ui: "Inter", "Helvetica Neue", system-ui, sans-serif;
+
+	--color-marian-blue: #1b2a6b;
+	--color-marian-blue-deep: #121c4a;
+	--color-marian-blue-soft: #3a4a8e;
+	--color-marian-blue-tint: #e5e8f2;
+
+	--color-sacred-red: #c8323c;
+	--color-sacred-red-deep: #a12028;
+	--color-sacred-red-soft: #e07078;
+	--color-sacred-red-tint: #f7e0e2;
+
+	--color-liturgical-gold: #c8a24b;
+	--color-liturgical-gold-soft: #e0c988;
+	--color-liturgical-gold-tint: #f5ecd3;
+
+	--color-mercy-white: #f5f1e8;
+	--color-paper: #fbf8f1;
+	--color-paper-warm: #efe9da;
+
+	--color-ink: #2a2520;
+	--color-ink-80: #4d453e;
+	--color-ink-60: #756c63;
+	--color-ink-40: #a89e94;
+	--color-ink-30: #c3bab0;
+	--color-ink-15: #e2dbce;
+	--color-ink-08: #ede7da;
+
+	/* the one ornamental shadow in the system — a gold top edge, used on
+	   featured cards (courses, events, donations). Nothing else gets a
+	   drop shadow beyond the sober defaults. */
+	--shadow-gold-edge: inset 0 2px 0 var(--color-liturgical-gold);
+}
+
+/* daisyUI theme: maps brand tokens onto daisyUI's semantic slots
+   (primary/secondary/accent/base/...) so daisyUI components pick
+   them up automatically. */
+@plugin "daisyui/theme" {
+	name: "divinamisericordia";
+	default: true;
+	color-scheme: light;
+
+	--color-base-100: #f5f1e8;
+	--color-base-200: #fbf8f1;
+	--color-base-300: #efe9da;
+	--color-base-content: #2a2520;
+
+	--color-primary: #1b2a6b;
+	--color-primary-content: #f5f1e8;
+	--color-secondary: #c8323c;
+	--color-secondary-content: #f5f1e8;
+	--color-accent: #c8a24b;
+	--color-accent-content: #2a2520;
+	--color-neutral: #2a2520;
+	--color-neutral-content: #f5f1e8;
+
+	--color-info: #1b2a6b;
+	--color-success: #4f7a3a;
+	--color-warning: #b5803a;
+	--color-error: #c8323c;
+
+	/* sober, mostly-square corners per the design system (never >12px except pills) */
+	--radius-selector: 0.25rem;
+	--radius-field: 0.25rem;
+	--radius-box: 0.25rem;
+	--border: 1px;
+	/* flat, no glassmorphism/drop-shadow marketing effects */
+	--depth: 0;
+	--noise: 0;
+}
+
+/* Special CTA button: solid sacred-red, more rounded than the rest of
+   the system (8px vs. the sober 4px base). Reserved for high-intent
+   actions — Registrarse, Donar, Iniciar Curso — never for routine UI,
+   so it keeps its power to stand out. Deliberate exception to the
+   design system's "never round beyond 12px" rule, scoped to this one
+   class instead of the global --radius-field (which would also round
+   every input/select/outline button).
+   Registered with @utility (not @layer components): daisyUI v5 defines
+   its own .btn color logic inside the utilities layer, which always
+   beats components regardless of source order — matching it here is
+   what lets this override daisyUI's default button background. */
+@utility btn-cta {
+	border-radius: 0.5rem;
+	background-color: var(--color-sacred-red);
+	border-color: var(--color-sacred-red);
+	color: var(--color-mercy-white);
+
+	&:hover {
+		background-color: var(--color-sacred-red-deep);
+		border-color: var(--color-sacred-red-deep);
+	}
+}
+
+/* Home hero background: warm "aurora" gradient, ported from the design
+   system's Direction A hero exploration. No image, no video — a static
+   gradient never gets a bad crop and never needs re-encoding. Colors are
+   hardcoded rgba() because a CSS gradient stop can't pull a hex custom
+   property apart into a separate alpha channel; each value below matches
+   an existing token: rgba(245,236,211) = --color-liturgical-gold-tint,
+   rgba(245,241,232) = --color-mercy-white, rgba(200,162,75) =
+   --color-liturgical-gold. */
+@utility hero-aurora {
+	background:
+		radial-gradient(120% 90% at 50% -18%, rgba(245, 236, 211, 0.95) 0%, rgba(245, 241, 232, 0) 55%),
+		radial-gradient(80% 70% at 78% 8%, rgba(200, 162, 75, 0.3) 0%, rgba(200, 162, 75, 0) 60%),
+		linear-gradient(180deg, var(--color-paper) 0%, var(--color-mercy-white) 60%, var(--color-paper-warm) 100%);
+}
+
+/* Soft breathing halo behind the hero copy — pure CSS animation, no JS.
+   Disabled for users who prefer reduced motion. */
+@utility hero-halo {
+	background: radial-gradient(circle, rgba(255, 247, 224, 0.9) 0%, rgba(245, 236, 211, 0.5) 30%, rgba(245, 241, 232, 0) 66%);
+	animation: hero-breathe 7s ease-in-out infinite;
+
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+	}
+}
+
+@keyframes hero-breathe {
+	0%,
+	100% {
+		opacity: 0.7;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1.06);
+	}
+}
+
+/* Tipografía para el cuerpo markdown de una lección (lesson_content.body,
+   renderizado con `marked`). Contenido cargado por el equipo de la
+   comunidad al armar un curso, no envío abierto de usuarios — por eso se
+   inyecta tal cual con dangerouslySetInnerHTML sin pasar por un
+   sanitizador aparte; si en el futuro se agrega contenido enviado por
+   usuarios (ej. el feed social de Fase 4), ESO sí necesita DOMPurify u
+   otro sanitizador antes de renderizarse.
+   Un puñado de selectores a mano en vez de sumar @tailwindcss/typography:
+   el universo de elementos que puede aparecer en una lección catequética
+   es chico y ya conocido (títulos, párrafos, listas, cita, énfasis,
+   links) — no vale la pena un plugin entero para eso. */
+.lesson-markdown {
+	font-family: var(--font-serif);
+	color: var(--color-ink-80);
+	line-height: 1.7;
+
+	& h2 {
+		font-family: var(--font-display);
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--color-marian-blue-deep);
+		margin-top: 0.5em;
+	}
+
+	& h3 {
+		font-family: var(--font-display);
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--color-marian-blue-deep);
+	}
+
+	& p {
+		font-size: 1.125rem;
+	}
+
+	& ul,
+	& ol {
+		padding-left: 1.5rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	& ul {
+		list-style: none;
+		padding-left: 1.25rem;
+	}
+
+	& ul li {
+		position: relative;
+	}
+
+	& ul li::before {
+		content: "";
+		position: absolute;
+		left: -1.25rem;
+		top: 0.65em;
+		width: 0.25rem;
+		height: 0.25rem;
+		border-radius: 999px;
+		background: var(--color-liturgical-gold);
+	}
+
+	& ol {
+		list-style: decimal;
+	}
+
+	& blockquote {
+		border-left: 2px solid var(--color-liturgical-gold);
+		padding-left: 1.25rem;
+		font-family: var(--font-display);
+		font-style: italic;
+		font-size: 1.25rem;
+		color: var(--color-marian-blue);
+	}
+
+	& strong {
+		font-weight: 600;
+		color: var(--color-ink);
+	}
+
+	& a {
+		color: var(--color-marian-blue);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+}
+
+body {
+	font-family: var(--font-serif);
+}

@@ -1,0 +1,30 @@
+---
+import { Image } from "astro:assets";
+import logo from "../assets/logo-circular.png";
+import AuthStatus from "./AuthStatus";
+
+const navLinks = [
+	{ href: "/eventos", label: "Eventos" },
+	{ href: "/cursos", label: "Cursos" },
+	{ href: "/quienes-somos", label: "Quiénes Somos" },
+];
+---
+
+<header class="sticky top-0 z-50 border-b border-ink-15/60 bg-base-100/90 backdrop-blur-md">
+	<nav class="mx-auto flex max-w-[1180px] items-center justify-between gap-6 px-6 py-3">
+		<a href="/" class="flex items-center gap-3" aria-label="Comunidad La Divina Misericordia">
+			<Image src={logo} width={40} height={40} alt="" class="rounded-full" />
+			<span class="font-display text-lg font-semibold text-marian-blue-deep">Divina Misericordia</span>
+		</a>
+
+		<ul class="hidden items-center gap-6 font-ui text-sm text-ink-80 sm:flex">
+			{navLinks.map((link) => (
+				<li>
+					<a href={link.href} class="hover:text-marian-blue">{link.label}</a>
+				</li>
+			))}
+		</ul>
+
+		<AuthStatus client:load />
+	</nav>
+</header>

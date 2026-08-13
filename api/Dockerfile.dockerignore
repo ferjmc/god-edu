@@ -1,0 +1,9 @@
+# Scoped a api/Dockerfile (BuildKit lo usa en vez del .dockerignore
+# genérico de la raíz porque el build context de este Dockerfile es la
+# raíz del repo completo, no solo api/ — ver el comentario en Dockerfile).
+.git
+web
+.env
+.env.*
+*.log
+tmp/

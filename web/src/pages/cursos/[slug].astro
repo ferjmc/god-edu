@@ -1,0 +1,27 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import CourseDetail from "../../components/CourseDetail";
+import { listCourses } from "../../lib/api/courses";
+
+// This only decides WHICH slugs get a static page — the actual course
+// content is fetched client-side by CourseDetail, gated behind a session.
+// Baking the content in here would leak it to anonymous visitors, since
+// the site is static output: everyone gets the same prerendered HTML.
+export async function getStaticPaths() {
+	try {
+		const courses = await listCourses();
+		return courses.map((course) => ({ params: { slug: course.slug } }));
+	} catch (err) {
+		console.error("cursos/[slug]: no se pudo obtener el listado para getStaticPaths", err);
+		return [];
+	}
+}
+
+const { slug } = Astro.params;
+---
+
+<Layout title="Curso — Comunidad La Divina Misericordia">
+	<main class="mx-auto max-w-[680px] px-6 py-16">
+		<CourseDetail slug={slug} client:load />
+	</main>
+</Layout>

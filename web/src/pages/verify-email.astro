@@ -1,0 +1,11 @@
+---
+import Layout from "../layouts/Layout.astro";
+import VerifyEmailStatus from "../components/VerifyEmailStatus";
+---
+
+<Layout title="Confirmá tu cuenta — Comunidad La Divina Misericordia">
+	<main class="mx-auto flex w-full max-w-[680px] flex-col items-start gap-6 px-6 py-16">
+		<h1 class="font-display text-3xl text-marian-blue-deep">Confirmá tu cuenta</h1>
+		<VerifyEmailStatus client:load />
+	</main>
+</Layout>
