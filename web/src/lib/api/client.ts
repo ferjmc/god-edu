@@ -21,20 +21,13 @@ export class ApiError extends Error {
 }
 
 type RequestOptions = {
-	method?: "GET" | "POST" | "PUT" | "DELETE";
+	method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 	body?: unknown;
 };
 
-/** Low-level request helper. Prefer the typed functions in the domain files
- * (auth.ts, courses.ts, ...) over calling this directly. */
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-	const response = await fetch(`${API_BASE_URL}${path}`, {
-		method: options.method ?? "GET",
-		credentials: "include",
-		headers: options.body ? { "Content-Type": "application/json" } : undefined,
-		body: options.body ? JSON.stringify(options.body) : undefined,
-	});
-
+/** Común a apiFetch y apiUpload: 204 sin cuerpo, error normalizado a
+ * ApiError, o el JSON de la respuesta. */
+async function handleResponse<T>(response: Response): Promise<T> {
 	if (response.status === 204) {
 		return undefined as T;
 	}
@@ -47,4 +40,30 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 	}
 
 	return data as T;
+}
+
+/** Low-level request helper. Prefer the typed functions in the domain files
+ * (auth.ts, courses.ts, ...) over calling this directly. */
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+	const response = await fetch(`${API_BASE_URL}${path}`, {
+		method: options.method ?? "GET",
+		credentials: "include",
+		headers: options.body ? { "Content-Type": "application/json" } : undefined,
+		body: options.body ? JSON.stringify(options.body) : undefined,
+	});
+
+	return handleResponse<T>(response);
+}
+
+/** Subida multipart — la usa solo POST .../content/pdf, el único endpoint
+ * que recibe un archivo en vez de JSON. No seteamos Content-Type a mano: el
+ * browser arma el boundary del multipart solo si se lo dejamos hacerlo. */
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+	const response = await fetch(`${API_BASE_URL}${path}`, {
+		method: "POST",
+		credentials: "include",
+		body: formData,
+	});
+
+	return handleResponse<T>(response);
 }

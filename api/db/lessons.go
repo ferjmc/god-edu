@@ -56,6 +56,39 @@ func (r *LessonRepo) ListByCourse(ctx context.Context, courseID, userID int64) (
 	return lessons, nil
 }
 
+// ListAllByCourse devuelve todas las lecciones de un curso en orden, sin el
+// estado de completado de ningún usuario en particular — a diferencia de
+// ListByCourse, que arma la currícula para un usuario logueado. La usa el
+// panel admin, donde "completado" no tiene sentido (no hay un usuario al
+// que preguntarle).
+func (r *LessonRepo) ListAllByCourse(ctx context.Context, courseID int64) ([]models.Lesson, error) {
+	const q = `
+		SELECT id, course_id, title, order_index, created_at
+		FROM lessons
+		WHERE course_id = $1
+		ORDER BY order_index
+	`
+	rows, err := r.pool.Query(ctx, q, courseID)
+	if err != nil {
+		return nil, fmt.Errorf("db: listando lecciones del curso %d: %w", courseID, err)
+	}
+	defer rows.Close()
+
+	var lessons []models.Lesson
+	for rows.Next() {
+		var l models.Lesson
+		if err := rows.Scan(&l.ID, &l.CourseID, &l.Title, &l.OrderIndex, &l.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: leyendo lección del curso %d: %w", courseID, err)
+		}
+		lessons = append(lessons, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: iterando lecciones del curso %d: %w", courseID, err)
+	}
+
+	return lessons, nil
+}
+
 // GetByCourseAndOrder busca una lección por curso + order_index. El
 // order_index (1-based) es el identificador público en la URL — ver
 // /cursos/{slug}/{leccion} en el frontend — para no exponer ids internos
@@ -76,6 +109,38 @@ func (r *LessonRepo) GetByCourseAndOrder(ctx context.Context, courseID int64, or
 		return models.Lesson{}, fmt.Errorf("db: leyendo lección %d/%d: %w", courseID, order, err)
 	}
 	return l, nil
+}
+
+// UpdateTitle renombra una lección. El order_index no se toca acá:
+// reordenar lecciones es una operación aparte (swap de dos índices a la
+// vez, contra la constraint UNIQUE(course_id, order_index)) que todavía no
+// tiene endpoint — no hace falta para cargar contenido en el orden
+// correcto desde el principio.
+func (r *LessonRepo) UpdateTitle(ctx context.Context, lessonID int64, title string) error {
+	const q = `UPDATE lessons SET title = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, title, lessonID)
+	if err != nil {
+		return fmt.Errorf("db: renombrando lección %d: %w", lessonID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteLesson borra una lección y, en cascada, su contenido y el progreso
+// de los usuarios sobre ella. No borra los PDFs de R2 — eso lo resuelve el
+// caller (AdminHandler.DeleteLesson) antes de llamar acá.
+func (r *LessonRepo) DeleteLesson(ctx context.Context, lessonID int64) error {
+	const q = `DELETE FROM lessons WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, lessonID)
+	if err != nil {
+		return fmt.Errorf("db: borrando lección %d: %w", lessonID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // IsCompleted indica si el usuario dado ya completó la lección dada.
@@ -151,6 +216,59 @@ func (r *LessonRepo) CreateContent(ctx context.Context, c models.LessonContent) 
 		return models.LessonContent{}, fmt.Errorf("db: creando contenido de lección %d: %w", c.LessonID, err)
 	}
 	return c, nil
+}
+
+// GetContentByLessonAndOrder busca una pieza de contenido puntual dentro de
+// una lección, por su order_index — mismo esquema identificador que
+// GetByCourseAndOrder usa para lecciones dentro de un curso.
+func (r *LessonRepo) GetContentByLessonAndOrder(ctx context.Context, lessonID int64, order int) (models.LessonContent, error) {
+	const q = `
+		SELECT id, lesson_id, title, order_index, content_type, youtube_url, pdf_url, body, created_at
+		FROM lesson_content
+		WHERE lesson_id = $1 AND order_index = $2
+	`
+	var c models.LessonContent
+	err := r.pool.QueryRow(ctx, q, lessonID, order).
+		Scan(&c.ID, &c.LessonID, &c.Title, &c.OrderIndex, &c.Type, &c.YoutubeURL, &c.PDFURL, &c.Body, &c.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.LessonContent{}, ErrNotFound
+		}
+		return models.LessonContent{}, fmt.Errorf("db: leyendo contenido %d/%d: %w", lessonID, order, err)
+	}
+	return c, nil
+}
+
+// UpdateContent actualiza el título y el campo específico de tipo (video:
+// youtube_url, markdown: body) de una pieza de contenido. pdf_url nunca se
+// toca acá: si hay que reemplazar el archivo de un PDF, se borra esa pieza
+// de contenido y se sube una nueva (ver UploadPDFContent) — editar un
+// archivo ya subido no es un caso que valga la pena resolver aparte.
+func (r *LessonRepo) UpdateContent(ctx context.Context, id int64, title string, youtubeURL, body *string) error {
+	const q = `UPDATE lesson_content SET title = $1, youtube_url = $2, body = $3 WHERE id = $4`
+	tag, err := r.pool.Exec(ctx, q, title, youtubeURL, body, id)
+	if err != nil {
+		return fmt.Errorf("db: actualizando contenido %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteContent borra una pieza de contenido. No borra el PDF de R2 si
+// corresponde — eso lo resuelve el caller (AdminHandler.DeleteContent)
+// antes de llamar acá.
+func (r *LessonRepo) DeleteContent(ctx context.Context, id int64) error {
+	const q = `DELETE FROM lesson_content WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("db: borrando contenido %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // NextContentOrder devuelve el próximo order_index libre para el contenido

@@ -21,6 +21,11 @@ export default function AuthStatus() {
 	if (auth.status === "authenticated") {
 		return (
 			<div className="flex items-center gap-3">
+				{auth.user.role === "ADMIN" && (
+					<a href="/admin/cursos" className="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">
+						Admin
+					</a>
+				)}
 				<span className="font-ui text-sm text-ink-80">{auth.user.name}</span>
 				<button type="button" className="btn btn-outline btn-sm" onClick={() => void logout()}>
 					Salir

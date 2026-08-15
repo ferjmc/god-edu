@@ -65,6 +65,12 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 type lessonContentResponse struct {
+	// Order es el order_index de la fila — lo necesita el panel admin para
+	// armar la URL de editar/borrar una pieza puntual (.../content/{order}).
+	// No alcanza con la posición en el array: si se borra un contenido del
+	// medio, el order_index deja de ser contiguo, pero sigue siendo el
+	// identificador real.
+	Order      int     `json:"order"`
 	Title      string  `json:"title"`
 	Type       string  `json:"type"`
 	YoutubeURL *string `json:"youtubeUrl,omitempty"`
@@ -126,6 +132,7 @@ func (h *LessonHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	contentResponse := make([]lessonContentResponse, len(content))
 	for i, c := range content {
 		contentResponse[i] = lessonContentResponse{
+			Order:      c.OrderIndex,
 			Title:      c.Title,
 			Type:       string(c.Type),
 			YoutubeURL: c.YoutubeURL,

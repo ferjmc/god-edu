@@ -1,0 +1,27 @@
+---
+// SSR, no estática: a diferencia de /cursos/[slug].astro (la pública, que
+// sí usa getStaticPaths — ver esa nota sobre por qué), acá no hay forma de
+// que tenga sentido prerenderizar. Un curso recién creado desde el panel
+// admin tiene que poder editarse al toque, no recién después del próximo
+// build del sitio — este problema es exactamente el que la decisión de
+// SSR pospuesta para las páginas públicas resolvería también, pero acá no
+// hay nada que posponer: no existe una lista fija de slugs admin conocida
+// en build time que valga la pena prerenderizar.
+export const prerender = false;
+
+import Layout from "../../../layouts/Layout.astro";
+import AdminCourseEditor from "../../../components/admin/AdminCourseEditor";
+
+const { slug } = Astro.params as { slug: string };
+---
+
+<Layout title="Editar curso — Comunidad La Divina Misericordia">
+	<main class="mx-auto max-w-[1180px] px-6 py-16">
+		<a href="/admin/cursos" class="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">← Volver a cursos</a>
+		<h1 class="mt-4 font-display text-3xl text-marian-blue-deep">Editar curso</h1>
+
+		<div class="mt-10">
+			<AdminCourseEditor slug={slug} client:load />
+		</div>
+	</main>
+</Layout>

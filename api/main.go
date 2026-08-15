@@ -132,7 +132,7 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{cfg.AppBaseURL},
-		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
+		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: true, // necesario para que el navegador mande la cookie de sesión
 		MaxAge:           300,
@@ -160,11 +160,19 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 		r.Use(auth.RequireAuth(jwtManager))
 		r.Use(handlers.RequireAdmin(users))
 
+		r.Get("/", adminHandler.ListCourses)
+		r.Get("/{slug}", adminHandler.CourseDetail)
 		r.Post("/", adminHandler.CreateCourse)
+		r.Put("/{slug}", adminHandler.UpdateCourseDetails)
 		r.Patch("/{slug}", adminHandler.SetPublished)
+		r.Delete("/{slug}", adminHandler.DeleteCourse)
 		r.Post("/{slug}/lessons", adminHandler.CreateLesson)
+		r.Put("/{slug}/lessons/{order}", adminHandler.UpdateLesson)
+		r.Delete("/{slug}/lessons/{order}", adminHandler.DeleteLesson)
 		r.Post("/{slug}/lessons/{order}/content", adminHandler.CreateContent)
 		r.Post("/{slug}/lessons/{order}/content/pdf", adminHandler.UploadPDFContent)
+		r.Put("/{slug}/lessons/{order}/content/{contentOrder}", adminHandler.UpdateContent)
+		r.Delete("/{slug}/lessons/{order}/content/{contentOrder}", adminHandler.DeleteContent)
 	})
 
 	r.Route("/auth", func(r chi.Router) {

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -71,4 +72,27 @@ func (r *R2) Upload(ctx context.Context, key string, body io.Reader, contentType
 	}
 
 	return fmt.Sprintf("%s/%s", r.publicBaseURL, key), nil
+}
+
+// DeleteByURL borra el objeto de R2 correspondiente a una URL pública
+// devuelta antes por Upload. Recibe la URL entera (no la key) porque es lo
+// único que el resto del sistema guarda (lesson_content.pdf_url) — acá
+// adentro se le saca el prefijo del dominio público para recuperar la key.
+// Si la URL no pertenece a este bucket, no hace nada: mejor no borrar por
+// error algo que no subimos nosotros.
+func (r *R2) DeleteByURL(ctx context.Context, url string) error {
+	prefix := r.publicBaseURL + "/"
+	if !strings.HasPrefix(url, prefix) {
+		return nil
+	}
+	key := strings.TrimPrefix(url, prefix)
+
+	_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(r.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("storage: borrando %q: %w", key, err)
+	}
+	return nil
 }

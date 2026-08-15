@@ -52,6 +52,36 @@ func (r *CourseRepo) ListPublished(ctx context.Context) ([]models.Course, error)
 	return courses, nil
 }
 
+// ListAll devuelve todos los cursos, publicados y en borrador, más nuevos
+// primero. La usa el panel admin (ListPublished es para la vidriera
+// pública) — necesita ver los borradores para poder seguir cargándolos.
+func (r *CourseRepo) ListAll(ctx context.Context) ([]models.Course, error) {
+	const q = `
+		SELECT id, title, slug, description, published, created_at
+		FROM courses
+		ORDER BY created_at DESC
+	`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("db: listando todos los cursos: %w", err)
+	}
+	defer rows.Close()
+
+	var courses []models.Course
+	for rows.Next() {
+		var c models.Course
+		if err := rows.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: leyendo curso: %w", err)
+		}
+		courses = append(courses, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: iterando cursos: %w", err)
+	}
+
+	return courses, nil
+}
+
 // GetBySlug busca un curso publicado por slug. Devuelve ErrNotFound tanto si
 // no existe como si existe pero todavía no está publicado — desde afuera
 // ambos casos son indistinguibles a propósito, para no filtrar qué slugs
@@ -130,6 +160,38 @@ func (r *CourseRepo) Create(ctx context.Context, c models.Course) (models.Course
 		return models.Course{}, fmt.Errorf("db: creando curso: %w", err)
 	}
 	return c, nil
+}
+
+// UpdateDetails actualiza título y descripción de un curso. El slug no se
+// puede tocar acá a propósito: cambiarlo rompería cualquier link ya
+// compartido a /cursos/{slug} — si hace falta renombrar la URL de un curso,
+// es una decisión aparte, no un campo más de este formulario.
+func (r *CourseRepo) UpdateDetails(ctx context.Context, slug, title string, description *string) error {
+	const q = `UPDATE courses SET title = $1, description = $2 WHERE slug = $3`
+	tag, err := r.pool.Exec(ctx, q, title, description, slug)
+	if err != nil {
+		return fmt.Errorf("db: actualizando curso %q: %w", slug, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Delete borra un curso y, en cascada (ver migrations), sus lecciones,
+// contenido, inscripciones y progreso. No borra los PDFs correspondientes
+// de R2 — eso lo resuelve el caller (AdminHandler.DeleteCourse) antes de
+// llamar acá, mientras todavía puede leer qué lecciones tenía.
+func (r *CourseRepo) Delete(ctx context.Context, slug string) error {
+	const q = `DELETE FROM courses WHERE slug = $1`
+	tag, err := r.pool.Exec(ctx, q, slug)
+	if err != nil {
+		return fmt.Errorf("db: borrando curso %q: %w", slug, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetPublished cambia el estado de publicación de un curso.
