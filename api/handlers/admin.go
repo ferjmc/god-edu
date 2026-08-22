@@ -34,6 +34,7 @@ const maxPDFUploadSize = 25 << 20
 // config.go): el resto de la API sigue funcionando, pero subir un PDF
 // devuelve 503 en vez de un panic por nil pointer.
 type AdminHandler struct {
+	Users   *db.UserRepo
 	Courses *db.CourseRepo
 	Lessons *db.LessonRepo
 	R2      *storage.R2
@@ -787,4 +788,49 @@ func (h *AdminHandler) resolveContent(w http.ResponseWriter, r *http.Request) (m
 	}
 
 	return lesson, content, true
+}
+
+// --- Listar / ver usuarios ---
+
+// adminUserResponse es la representación de un usuario para el panel
+// admin: lleva todo lo que un admin necesita para decidir qué tocar — estado de
+// usuario, roles y fecha de alta.
+type adminUserResponse struct {
+	ID            int64             `json:"id"`
+	Email         string            `json:"email"`
+	Name          string            `json:"name"`
+	AuthProvider  string            `json:"auth_provider"`
+	EmailVerified bool              `json:"email_verified"`
+	Role          string            `json:"role"`
+	CreatedAt     time.Time         `json:"createdAt"`
+}
+
+func toAdminUserResponse(u models.User) adminUserResponse {
+	return adminUserResponse{
+		ID:             u.ID,
+		Email: 			u.Email,
+		Name:           u.Name,
+		AuthProvider:   string(u.AuthProvider),
+		EmailVerified:  u.EmailVerified,
+		Role: 			string(u.Role),
+		CreatedAt:    	u.CreatedAt,
+	}
+}
+
+// ListUsers devuelve todos los usuarios (activos e inactivos) para el
+// panel admin. 
+func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := h.Users.ListAll(r.Context())
+	if err != nil {
+		log.Printf("admin: listando usuarios: %v", err)
+		writeError(w, http.StatusInternalServerError, "no se pudieron obtener los usuarios")
+		return
+	}
+
+	response := make([]adminUserResponse, len(users))
+	for i, u := range users {
+		response[i] = toAdminUserResponse(u)
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }

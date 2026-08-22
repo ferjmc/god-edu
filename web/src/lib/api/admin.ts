@@ -17,6 +17,16 @@ export type AdminCourse = {
 	createdAt: string;
 };
 
+export type AdminUser = {
+	id: number;
+	email: string;
+	name: string;
+	authProvider: string;
+	emailVerified: boolean;
+	role: string;
+	createdAt: string;
+};
+
 /** Mirrors handlers.lessonContentResponse. `order` is the stable id used to
  * edit/delete this piece — NOT its position in the array, which shifts as
  * soon as anything is deleted out of order (see the comment on the Go
@@ -118,4 +128,8 @@ export function updateContent(
 
 export function deleteContent(slug: string, lessonOrder: number, contentOrder: number): Promise<void> {
 	return apiFetch(`/admin/courses/${slug}/lessons/${lessonOrder}/content/${contentOrder}`, { method: "DELETE" });
+}
+
+export function listAdminUsers(): Promise<AdminUser[]> {
+	return apiFetch<AdminUser[]>("/admin/users");
 }

@@ -25,6 +25,35 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 	return &UserRepo{pool: pool}
 }
 
+// ListAll devuelve todos los usuarios, activos e inactivos, más nuevos
+// primero. La usa el panel admin — necesita ver los inactivos para poder activarlos.
+func (r *UserRepo) ListAll(ctx context.Context) ([]models.User, error) {
+	const q = `
+		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at
+		FROM users
+		ORDER BY created_at DESC
+	`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("db: listando usuarios: %w", err)
+	}
+	defer rows.Close()
+
+	var users []models.User
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.AuthProvider, &u.EmailVerified, &u.Role, &u.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: leyendo usuario: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: iterando usuarios: %w", err)
+	}
+
+	return users, nil
+}
+
 // Create inserta un usuario nuevo y devuelve el registro con id/created_at
 // completados por la base.
 func (r *UserRepo) Create(ctx context.Context, u models.User) (models.User, error) {

@@ -95,7 +95,7 @@ func main() {
 	}
 	courseHandler := &handlers.CourseHandler{Courses: courses, Users: users}
 	lessonHandler := &handlers.LessonHandler{Courses: courses, Users: users, Lessons: lessons}
-	adminHandler := &handlers.AdminHandler{Courses: courses, Lessons: lessons, R2: r2}
+	adminHandler := &handlers.AdminHandler{Users: users, Courses: courses, Lessons: lessons, R2: r2}
 
 	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, adminHandler, users, jwtManager)
 
@@ -173,6 +173,15 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 		r.Post("/{slug}/lessons/{order}/content/pdf", adminHandler.UploadPDFContent)
 		r.Put("/{slug}/lessons/{order}/content/{contentOrder}", adminHandler.UpdateContent)
 		r.Delete("/{slug}/lessons/{order}/content/{contentOrder}", adminHandler.DeleteContent)
+	})
+
+	// /admin: consulta de usuarios.
+	// Detrás de sesión + rol ADMIN — ver handlers.RequireAdmin. 
+	r.Route("/admin/users", func(r chi.Router) {
+		r.Use(auth.RequireAuth(jwtManager))
+		r.Use(handlers.RequireAdmin(users))
+
+		r.Get("/", adminHandler.ListUsers)
 	})
 
 	r.Route("/auth", func(r chi.Router) {
