@@ -68,6 +68,11 @@ export default function CourseDetail({ slug }: Props) {
 		return <span className="loading loading-spinner loading-md text-marian-blue" aria-label="Cargando curso" />;
 	}
 
+	// Primera lección sin completar — se resalta en la lista para que el
+	// usuario no tenga que escanear los checks a mano para saber por dónde
+	// seguir (mismo dato que ya usa CourseProgressCard para el CTA).
+	const nextPendingOrder = lessons.find((l) => !l.completed)?.order;
+
 	return (
 		<article>
 			<h1 className="font-display text-3xl text-marian-blue-deep">{course.title}</h1>
@@ -77,23 +82,31 @@ export default function CourseDetail({ slug }: Props) {
 				<div className="mt-10">
 					<h2 className="font-display text-xl font-semibold text-marian-blue-deep">Lecciones</h2>
 					<ol className="mt-4 flex flex-col gap-1">
-						{lessons.map((lesson) => (
-							<li key={lesson.order}>
-								<a
-									href={`/cursos/${course.slug}/${lesson.order}`}
-									className="flex items-center gap-3 rounded-[4px] px-3 py-2.5 transition-colors hover:bg-paper-warm"
-								>
-									{lesson.completed ? (
-										<CheckCircleIcon className="h-5 w-5 shrink-0 text-liturgical-gold" />
-									) : (
-										<span className="h-5 w-5 shrink-0 rounded-full border border-current" aria-hidden="true" />
-									)}
-									<span className="flex-1 font-ui text-sm text-ink-80">
-										{lesson.order}. {lesson.title}
-									</span>
-								</a>
-							</li>
-						))}
+						{lessons.map((lesson) => {
+							const isNext = lesson.order === nextPendingOrder;
+							return (
+								<li key={lesson.order}>
+									<a
+										href={`/cursos/${course.slug}/${lesson.order}`}
+										className={`flex items-center gap-3 rounded-[4px] border px-3 py-2.5 transition-colors hover:bg-paper-warm ${
+											isNext ? "border-liturgical-gold bg-paper-warm" : "border-transparent"
+										}`}
+									>
+										{lesson.completed ? (
+											<CheckCircleIcon className="h-5 w-5 shrink-0 text-liturgical-gold" />
+										) : (
+											<span className="h-5 w-5 shrink-0 rounded-full border border-current" aria-hidden="true" />
+										)}
+										<span className="flex-1 font-ui text-sm text-ink-80">
+											{lesson.order}. {lesson.title}
+										</span>
+										{isNext && (
+											<span className="font-ui text-xs font-semibold text-marian-blue">Continuar acá →</span>
+										)}
+									</a>
+								</li>
+							);
+						})}
 					</ol>
 				</div>
 			)}

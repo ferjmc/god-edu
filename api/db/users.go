@@ -149,6 +149,46 @@ func (r *UserRepo) ClaimByOAuth(ctx context.Context, id int64, provider models.A
 	return nil
 }
 
+// UpdateRole cambia el rol de un usuario. Si hoy es ADMIN y el rol nuevo
+// no lo es, chequea antes que no sea el último admin que queda.
+//
+// Nota deliberada: el chequeo y el UPDATE son dos queries separadas, no
+// una transacción con lock — hay una ventana teórica de carrera (dos
+// requests concurrentes degradando admins distintos podrían contar 2 cada
+// uno y dejar el sistema sin ningún admin). Se acepta ese riesgo a
+// propósito: esta es una plataforma de un solo desarrollador con manejo de
+// admins manual y de bajo volumen (ver CLAUDE.md, "simplicidad sobre
+// elegancia") — la alternativa correcta requiere transacción + row locks,
+// complejidad real para un caso que en la práctica no va a pasar. Si algún
+// día se necesitara cerrar la ventana del todo, ahí sí vale la pena.
+func (r *UserRepo) UpdateRole(ctx context.Context, id int64, role models.UserRole) error {
+	current, err := r.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if current.Role == models.RoleAdmin && role != models.RoleAdmin {
+		var adminCount int
+		const countQ = `SELECT COUNT(*) FROM users WHERE role = $1`
+		if err := r.pool.QueryRow(ctx, countQ, models.RoleAdmin).Scan(&adminCount); err != nil {
+			return fmt.Errorf("db: contando administradores: %w", err)
+		}
+		if adminCount <= 1 {
+			return ErrLastAdmin
+		}
+	}
+
+	const q = `UPDATE users SET role = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, role, id)
+	if err != nil {
+		return fmt.Errorf("db: actualizando rol de usuario %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *UserRepo) scanOne(row pgx.Row) (models.User, error) {
 	var u models.User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.AuthProvider, &u.EmailVerified, &u.Role, &u.CreatedAt)

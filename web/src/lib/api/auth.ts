@@ -51,3 +51,19 @@ export function verifyEmail(token: string): Promise<{ email_verified: boolean }>
 export function resendVerification(email: string): Promise<{ message: string }> {
 	return apiFetch<{ message: string }>("/auth/resend-verification", { method: "POST", body: { email } });
 }
+
+/** Pide el link de restablecimiento de contraseña. Mismo patrón que
+ * resendVerification: respuesta genérica exista o no el email, ver
+ * AuthHandler.ForgotPassword. */
+export function forgotPassword(email: string): Promise<{ message: string }> {
+	return apiFetch<{ message: string }>("/auth/forgot-password", { method: "POST", body: { email } });
+}
+
+/** Consume el token del link de restablecimiento (?token= en la URL del
+ * email, ver AuthHandler.sendPasswordResetEmail) y fija la contraseña nueva. */
+export function resetPassword(token: string, newPassword: string): Promise<{ status: string }> {
+	return apiFetch<{ status: string }>("/auth/reset-password", {
+		method: "POST",
+		body: { token, new_password: newPassword },
+	});
+}

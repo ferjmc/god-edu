@@ -1,0 +1,12 @@
+---
+import Layout from "../layouts/Layout.astro";
+import ForgotPasswordForm from "../components/forms/ForgotPasswordForm";
+---
+
+<Layout title="Restablecer contraseña — Comunidad La Divina Misericordia">
+	<main class="mx-auto flex w-full max-w-[680px] flex-col items-start gap-6 px-6 py-16">
+		<h1 class="font-display text-3xl text-marian-blue-deep">¿Olvidaste tu contraseña?</h1>
+		<p class="font-serif text-ink-80">Ingresá tu email y te mandamos instrucciones para restablecerla.</p>
+		<ForgotPasswordForm client:load />
+	</main>
+</Layout>

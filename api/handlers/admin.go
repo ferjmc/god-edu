@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/models"
 	"github.com/ferjmc/god-edu/api/storage"
@@ -44,6 +45,11 @@ type AdminHandler struct {
 // Un slug raro (espacios, mayúsculas, unicode) después complica armar URLs
 // y comparar rutas — mejor rechazarlo acá que arrastrarlo por todo el sitio.
 var slugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// reservedSlugs son slugs que colisionarían con una ruta estática de
+// /courses (hoy solo "mine", ver GET /courses/mine en main.go): un curso
+// con ese slug quedaría inalcanzable por /courses/{slug} para siempre.
+var reservedSlugs = map[string]bool{"mine": true}
 
 // --- Listar / ver curso ---
 
@@ -115,8 +121,7 @@ func (h *AdminHandler) CourseDetail(w http.ResponseWriter, r *http.Request) {
 
 	course, err := h.Courses.GetBySlugAny(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return
 		}
 		log.Printf("admin: obteniendo curso %q: %v", slug, err)
@@ -183,14 +188,18 @@ func (h *AdminHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.Title = strings.TrimSpace(req.Title)
-	req.Slug = strings.TrimSpace(req.Slug)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, req.Title, "título")
+	if !ok {
 		return
 	}
+	req.Title = title
+	req.Slug = strings.TrimSpace(req.Slug)
 	if !slugPattern.MatchString(req.Slug) {
 		writeError(w, http.StatusBadRequest, "el slug debe ser minúsculas, números y guiones (ej. mi-curso-nuevo)")
+		return
+	}
+	if reservedSlugs[req.Slug] {
+		writeError(w, http.StatusBadRequest, "ese slug está reservado, elegí otro")
 		return
 	}
 
@@ -229,8 +238,7 @@ func (h *AdminHandler) SetPublished(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Courses.SetPublished(r.Context(), slug, req.Published); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return
 		}
 		log.Printf("admin: publicando curso %q: %v", slug, err)
@@ -260,15 +268,14 @@ func (h *AdminHandler) UpdateCourseDetails(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, req.Title, "título")
+	if !ok {
 		return
 	}
+	req.Title = title
 
 	if err := h.Courses.UpdateDetails(r.Context(), slug, req.Title, req.Description); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return
 		}
 		log.Printf("admin: actualizando curso %q: %v", slug, err)
@@ -297,8 +304,7 @@ func (h *AdminHandler) DeleteCourse(w http.ResponseWriter, r *http.Request) {
 
 	course, err := h.Courses.GetBySlugAny(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return
 		}
 		log.Printf("admin: obteniendo curso %q para borrar: %v", slug, err)
@@ -317,8 +323,7 @@ func (h *AdminHandler) DeleteCourse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Courses.Delete(r.Context(), slug); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return
 		}
 		log.Printf("admin: borrando curso %q: %v", slug, err)
@@ -368,8 +373,7 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 
 	course, err := h.Courses.GetBySlugAny(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return
 		}
 		log.Printf("admin: obteniendo curso %q: %v", slug, err)
@@ -382,11 +386,11 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, req.Title, "título")
+	if !ok {
 		return
 	}
+	req.Title = title
 	if req.Order < 1 {
 		writeError(w, http.StatusBadRequest, "order debe ser 1 o mayor")
 		return
@@ -429,15 +433,14 @@ func (h *AdminHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, req.Title, "título")
+	if !ok {
 		return
 	}
+	req.Title = title
 
 	if err := h.Lessons.UpdateTitle(r.Context(), lesson.ID, req.Title); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "lección no encontrada")
+		if handleNotFound(w, err, "lección no encontrada") {
 			return
 		}
 		log.Printf("admin: renombrando lección %d: %v", lesson.ID, err)
@@ -460,8 +463,7 @@ func (h *AdminHandler) DeleteLesson(w http.ResponseWriter, r *http.Request) {
 	h.cleanupLessonPDFs(r.Context(), lesson.ID)
 
 	if err := h.Lessons.DeleteLesson(r.Context(), lesson.ID); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "lección no encontrada")
+		if handleNotFound(w, err, "lección no encontrada") {
 			return
 		}
 		log.Printf("admin: borrando lección %d: %v", lesson.ID, err)
@@ -495,11 +497,11 @@ func (h *AdminHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, req.Title, "título")
+	if !ok {
 		return
 	}
+	req.Title = title
 
 	content := models.LessonContent{LessonID: lesson.ID, Title: req.Title}
 	switch req.Type {
@@ -573,9 +575,8 @@ func (h *AdminHandler) UploadPDFContent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	title := strings.TrimSpace(r.FormValue("title"))
-	if title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, r.FormValue("title"), "título")
+	if !ok {
 		return
 	}
 
@@ -643,8 +644,7 @@ func (h *AdminHandler) resolveLesson(w http.ResponseWriter, r *http.Request) (mo
 
 	course, err := h.Courses.GetBySlugAny(r.Context(), slug)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "curso no encontrado")
+		if handleNotFound(w, err, "curso no encontrado") {
 			return models.Lesson{}, false
 		}
 		log.Printf("admin: obteniendo curso %q: %v", slug, err)
@@ -654,8 +654,7 @@ func (h *AdminHandler) resolveLesson(w http.ResponseWriter, r *http.Request) (mo
 
 	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), course.ID, order)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "lección no encontrada")
+		if handleNotFound(w, err, "lección no encontrada") {
 			return models.Lesson{}, false
 		}
 		log.Printf("admin: obteniendo lección %d/%d: %v", course.ID, order, err)
@@ -689,11 +688,11 @@ func (h *AdminHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "el título es obligatorio")
+	title, ok := requireNonEmpty(w, req.Title, "título")
+	if !ok {
 		return
 	}
+	req.Title = title
 
 	switch content.Type {
 	case models.ContentTypeVideo:
@@ -714,8 +713,7 @@ func (h *AdminHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Lessons.UpdateContent(r.Context(), content.ID, req.Title, req.YoutubeURL, req.Body); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "contenido no encontrado")
+		if handleNotFound(w, err, "contenido no encontrado") {
 			return
 		}
 		log.Printf("admin: actualizando contenido %d: %v", content.ID, err)
@@ -748,8 +746,7 @@ func (h *AdminHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Lessons.DeleteContent(r.Context(), content.ID); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "contenido no encontrado")
+		if handleNotFound(w, err, "contenido no encontrado") {
 			return
 		}
 		log.Printf("admin: borrando contenido %d: %v", content.ID, err)
@@ -778,8 +775,7 @@ func (h *AdminHandler) resolveContent(w http.ResponseWriter, r *http.Request) (m
 
 	content, err := h.Lessons.GetContentByLessonAndOrder(r.Context(), lesson.ID, contentOrder)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "contenido no encontrado")
+		if handleNotFound(w, err, "contenido no encontrado") {
 			return models.Lesson{}, models.LessonContent{}, false
 		}
 		log.Printf("admin: obteniendo contenido %d/%d: %v", lesson.ID, contentOrder, err)
@@ -799,8 +795,8 @@ type adminUserResponse struct {
 	ID            int64             `json:"id"`
 	Email         string            `json:"email"`
 	Name          string            `json:"name"`
-	AuthProvider  string            `json:"auth_provider"`
-	EmailVerified bool              `json:"email_verified"`
+	AuthProvider  string            `json:"authProvider"`
+	EmailVerified bool              `json:"emailVerified"`
 	Role          string            `json:"role"`
 	CreatedAt     time.Time         `json:"createdAt"`
 }
@@ -833,4 +829,55 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+type updateUserRoleRequest struct {
+	Role string `json:"role"`
+}
+
+// UpdateUserRole cambia el rol de un usuario. Dos protecciones para no
+// dejar la plataforma sin ningún ADMIN: (1) un admin no puede cambiar su
+// propio rol por acá (evita autodegradarse sin querer), y (2) no se puede
+// bajar de ADMIN al último administrador que queda, sin importar quién
+// haga el cambio — esto último cubre el caso que el punto (1) solo no
+// alcanza a prevenir (un admin le baja el rol a otro admin, dejando cero).
+// Ambas protecciones se pueden saltar a mano contra la base si hace falta.
+func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "id de usuario inválido")
+		return
+	}
+
+	callerID, _ := auth.UserIDFromContext(r.Context()) // RequireAuth ya lo garantiza
+	if callerID == id {
+		writeError(w, http.StatusBadRequest, "no podés cambiar tu propio rol")
+		return
+	}
+
+	var req updateUserRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	role := models.UserRole(req.Role)
+	if !role.Valid() {
+		writeError(w, http.StatusBadRequest, "rol inválido")
+		return
+	}
+
+	if err := h.Users.UpdateRole(r.Context(), id, role); err != nil {
+		if handleNotFound(w, err, "usuario no encontrado") {
+			return
+		}
+		if errors.Is(err, db.ErrLastAdmin) {
+			writeError(w, http.StatusBadRequest, "no podés quitarle el rol de admin al último administrador")
+			return
+		}
+		log.Printf("admin: actualizando rol de usuario %d: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "no se pudo actualizar el rol")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

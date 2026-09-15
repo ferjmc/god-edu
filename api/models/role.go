@@ -12,3 +12,15 @@ const (
 	RolePublicMember    UserRole = "PUBLIC_MEMBER"
 	RolePaidMember      UserRole = "PAID_MEMBER"
 )
+
+// Valid indica si role es uno de los cuatro roles conocidos. La usa
+// AdminHandler.UpdateUserRole para rechazar un rol inventado antes de
+// tocar la base (el CHECK constraint de la columna igual lo frenaría, pero
+// devolver 400 con mensaje claro es mejor que un 500 de Postgres).
+func (r UserRole) Valid() bool {
+	switch r {
+	case RoleAdmin, RoleCommunityMember, RolePublicMember, RolePaidMember:
+		return true
+	}
+	return false
+}

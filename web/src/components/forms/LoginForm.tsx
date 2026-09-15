@@ -23,7 +23,7 @@ export default function LoginForm() {
 		setSubmitting(true);
 		try {
 			await login({ email, password });
-			window.location.assign("/");
+			window.location.assign("/mis-cursos");
 		} catch (err) {
 			setError(err instanceof ApiError ? err.message : "No se pudo iniciar sesión. Intentá de nuevo.");
 			setSubmitting(false);
@@ -51,6 +51,9 @@ export default function LoginForm() {
 					onChange={(e) => setPassword(e.target.value)}
 					className="input input-bordered w-full"
 				/>
+				<a href="/olvide-mi-contrasena" className="self-end font-ui text-xs text-marian-blue hover:text-marian-blue-deep">
+					¿Olvidaste tu contraseña?
+				</a>
 			</label>
 
 			{error && (

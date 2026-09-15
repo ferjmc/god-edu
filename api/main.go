@@ -145,6 +145,7 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth(jwtManager))
+			r.Get("/mine", courseHandler.Mine)
 			r.Get("/{slug}", courseHandler.Detail)
 			r.Get("/{slug}/lessons", lessonHandler.List)
 			r.Get("/{slug}/lessons/{order}", lessonHandler.Detail)
@@ -182,6 +183,7 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 		r.Use(handlers.RequireAdmin(users))
 
 		r.Get("/", adminHandler.ListUsers)
+		r.Patch("/{id}", adminHandler.UpdateUserRole)
 	})
 
 	r.Route("/auth", func(r chi.Router) {

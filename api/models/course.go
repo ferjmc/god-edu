@@ -35,3 +35,22 @@ func (c Course) VisibleTo(role UserRole) bool {
 	}
 	return false
 }
+
+// CourseProgress es un curso visible para un usuario junto con su avance:
+// cuántas lecciones tiene y cuántas ya completó. La arma
+// CourseRepo.ListVisibleWithProgress para la pantalla "mis cursos" — no
+// lleva VisibleRoles (no hace falta una vez que el filtro de acceso ya se
+// aplicó en la query).
+type CourseProgress struct {
+	ID               int64
+	Title            string
+	Slug             string
+	Description      *string
+	TotalLessons     int
+	CompletedLessons int
+	// NextLessonOrder es el order_index de la primera lección pendiente
+	// (nil si el curso no tiene lecciones o ya están todas completadas) —
+	// permite que "Continuar"/"Empezar" salten directo a la lección en vez
+	// de la portada del curso.
+	NextLessonOrder *int
+}

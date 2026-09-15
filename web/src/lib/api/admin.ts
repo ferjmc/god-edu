@@ -23,7 +23,7 @@ export type AdminUser = {
 	name: string;
 	authProvider: string;
 	emailVerified: boolean;
-	role: string;
+	role: UserRole;
 	createdAt: string;
 };
 
@@ -132,4 +132,11 @@ export function deleteContent(slug: string, lessonOrder: number, contentOrder: n
 
 export function listAdminUsers(): Promise<AdminUser[]> {
 	return apiFetch<AdminUser[]>("/admin/users");
+}
+
+/** Cambia el rol de un usuario. El propio API rechaza que un admin se
+ * cambie el rol a sí mismo (ver AdminHandler.UpdateUserRole) — acá no se
+ * repite esa validación, se confía en el 400 que devuelve. */
+export function updateUserRole(id: number, role: UserRole): Promise<void> {
+	return apiFetch<void>(`/admin/users/${id}`, { method: "PATCH", body: { role } });
 }

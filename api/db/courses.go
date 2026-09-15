@@ -21,6 +21,28 @@ func NewCourseRepo(pool *pgxpool.Pool) *CourseRepo {
 	return &CourseRepo{pool: pool}
 }
 
+// scanCourse escanea una fila con las columnas id, title, slug,
+// description, published, created_at — comunes a ListPublished, ListAll,
+// GetBySlug y GetBySlugAny.
+func scanCourse(row pgx.Row) (models.Course, error) {
+	var c models.Course
+	err := row.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt)
+	return c, err
+}
+
+// scanOne envuelve scanCourse mapeando pgx.ErrNoRows a ErrNotFound — mismo
+// patrón que UserRepo.scanOne en db/users.go.
+func (r *CourseRepo) scanOne(row pgx.Row) (models.Course, error) {
+	c, err := scanCourse(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.Course{}, ErrNotFound
+		}
+		return models.Course{}, fmt.Errorf("db: leyendo curso: %w", err)
+	}
+	return c, nil
+}
+
 // ListPublished devuelve los cursos publicados, más nuevos primero. Es el
 // único listado que ve un usuario sin permisos de administración — los
 // cursos en borrador (published = false) nunca salen de acá.
@@ -39,8 +61,8 @@ func (r *CourseRepo) ListPublished(ctx context.Context) ([]models.Course, error)
 
 	var courses []models.Course
 	for rows.Next() {
-		var c models.Course
-		if err := rows.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt); err != nil {
+		c, err := scanCourse(rows)
+		if err != nil {
 			return nil, fmt.Errorf("db: leyendo curso: %w", err)
 		}
 		courses = append(courses, c)
@@ -69,8 +91,8 @@ func (r *CourseRepo) ListAll(ctx context.Context) ([]models.Course, error) {
 
 	var courses []models.Course
 	for rows.Next() {
-		var c models.Course
-		if err := rows.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt); err != nil {
+		c, err := scanCourse(rows)
+		if err != nil {
 			return nil, fmt.Errorf("db: leyendo curso: %w", err)
 		}
 		courses = append(courses, c)
@@ -92,14 +114,9 @@ func (r *CourseRepo) GetBySlug(ctx context.Context, slug string) (models.Course,
 		FROM courses
 		WHERE slug = $1 AND published = true
 	`
-	var c models.Course
-	err := r.pool.QueryRow(ctx, q, slug).
-		Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt)
+	c, err := r.scanOne(r.pool.QueryRow(ctx, q, slug))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Course{}, ErrNotFound
-		}
-		return models.Course{}, fmt.Errorf("db: leyendo curso %q: %w", slug, err)
+		return models.Course{}, err
 	}
 
 	visibleRoles, err := r.visibleRoles(ctx, c.ID)
@@ -121,14 +138,9 @@ func (r *CourseRepo) GetBySlugAny(ctx context.Context, slug string) (models.Cour
 		FROM courses
 		WHERE slug = $1
 	`
-	var c models.Course
-	err := r.pool.QueryRow(ctx, q, slug).
-		Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt)
+	c, err := r.scanOne(r.pool.QueryRow(ctx, q, slug))
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Course{}, ErrNotFound
-		}
-		return models.Course{}, fmt.Errorf("db: leyendo curso %q: %w", slug, err)
+		return models.Course{}, err
 	}
 
 	visibleRoles, err := r.visibleRoles(ctx, c.ID)
@@ -205,6 +217,58 @@ func (r *CourseRepo) SetPublished(ctx context.Context, slug string, published bo
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ListVisibleWithProgress devuelve, para un usuario y su rol, los cursos
+// publicados y visibles para ese rol (mismo criterio que Course.VisibleTo:
+// sin restricción configurada, o el rol está en course_visible_roles),
+// junto con el total de lecciones, cuántas completó ese usuario, y el
+// order_index de la primera lección pendiente (NextLessonOrder, nil si no
+// tiene lecciones o ya las completó todas) — así "Mis cursos" puede saltar
+// directo a la lección en vez de mandar siempre a la portada del curso. Una
+// sola query agregada (LEFT JOIN + COUNT/MIN FILTER) en vez de N+1 — el
+// volumen de cursos de esta plataforma (decenas, no miles) hace que valga
+// más la simplicidad de una query que la de armarlo con varias llamadas al
+// repo. El filtro de rol va acá, en el WHERE — no reutiliza Course.VisibleTo
+// en memoria porque ListPublished/ListAll no llenan VisibleRoles hoy (solo
+// GetBySlug/GetBySlugAny lo hacen).
+func (r *CourseRepo) ListVisibleWithProgress(ctx context.Context, userID int64, role models.UserRole) ([]models.CourseProgress, error) {
+	const q = `
+		SELECT
+			c.id, c.title, c.slug, c.description,
+			COUNT(l.id) AS total_lessons,
+			COUNT(lp.id) FILTER (WHERE lp.completed) AS completed_lessons,
+			MIN(l.order_index) FILTER (WHERE lp.completed IS NOT TRUE) AS next_lesson_order
+		FROM courses c
+		LEFT JOIN lessons l ON l.course_id = c.id
+		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1
+		WHERE c.published = true
+			AND (
+				$2 = 'ADMIN'
+				OR NOT EXISTS (SELECT 1 FROM course_visible_roles cvr WHERE cvr.course_id = c.id)
+				OR EXISTS (SELECT 1 FROM course_visible_roles cvr WHERE cvr.course_id = c.id AND cvr.role = $2)
+			)
+		GROUP BY c.id
+		ORDER BY c.created_at DESC
+	`
+	rows, err := r.pool.Query(ctx, q, userID, role)
+	if err != nil {
+		return nil, fmt.Errorf("db: listando cursos con progreso del usuario %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	var courses []models.CourseProgress
+	for rows.Next() {
+		var c models.CourseProgress
+		if err := rows.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.TotalLessons, &c.CompletedLessons, &c.NextLessonOrder); err != nil {
+			return nil, fmt.Errorf("db: leyendo curso con progreso: %w", err)
+		}
+		courses = append(courses, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: iterando cursos con progreso del usuario %d: %w", userID, err)
+	}
+	return courses, nil
 }
 
 // visibleRoles devuelve los roles configurados en course_visible_roles para

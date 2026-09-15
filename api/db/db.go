@@ -18,6 +18,10 @@ var ErrNotFound = errors.New("db: not found")
 // (por ejemplo, un email que ya existe).
 var ErrConflict = errors.New("db: already exists")
 
+// ErrLastAdmin indica que un cambio de rol dejaría a la plataforma sin
+// ningún usuario ADMIN — ver UserRepo.UpdateRole.
+var ErrLastAdmin = errors.New("db: no se puede quitar el último admin")
+
 // NewPool abre un pool de conexiones a Postgres a partir de una cadena de
 // conexión (ver DATABASE_URL en .env.example) y confirma que responde.
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {

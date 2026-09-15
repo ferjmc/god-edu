@@ -21,6 +21,9 @@ export default function AuthStatus() {
 	if (auth.status === "authenticated") {
 		return (
 			<div className="flex items-center gap-3">
+				<a href="/mis-cursos" className="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">
+					Mis cursos
+				</a>
 				{auth.user.role === "ADMIN" && (
 					<a href="/admin/cursos" className="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">
 						Admin

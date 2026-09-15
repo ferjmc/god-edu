@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -106,8 +105,7 @@ func (h *LessonHandler) Detail(w http.ResponseWriter, r *http.Request) {
 
 	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), course.ID, order)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "lección no encontrada")
+		if handleNotFound(w, err, "lección no encontrada") {
 			return
 		}
 		log.Printf("lessons: obteniendo lección %d/%d: %v", course.ID, order, err)
@@ -179,8 +177,7 @@ func (h *LessonHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 
 	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), course.ID, order)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "lección no encontrada")
+		if handleNotFound(w, err, "lección no encontrada") {
 			return
 		}
 		log.Printf("lessons: obteniendo lección %d/%d: %v", course.ID, order, err)

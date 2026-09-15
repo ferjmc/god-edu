@@ -28,6 +28,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 	const [error, setError] = useState<string | null>(null);
 	const [marking, setMarking] = useState(false);
 	const [markError, setMarkError] = useState<string | null>(null);
+	const [advancing, setAdvancing] = useState(false);
 
 	useEffect(() => {
 		if (auth.status === "loading") void initAuth();
@@ -51,17 +52,43 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 	 * LessonHandler.MarkComplete (/api) sobre por qué. Actualiza el estado
 	 * local en el momento (lección + item correspondiente en la currícula
 	 * del sidebar) en vez de volver a pedir todo de nuevo al servidor. */
+	async function markCurrentComplete() {
+		await markLessonComplete(courseSlug, lessonNumber);
+		setLesson((prev) => (prev ? { ...prev, completed: true } : prev));
+		setCurriculum((prev) => prev?.map((item) => (item.order === lessonNumber ? { ...item, completed: true } : item)) ?? prev);
+	}
+
 	async function handleMarkComplete() {
 		setMarking(true);
 		setMarkError(null);
 		try {
-			await markLessonComplete(courseSlug, lessonNumber);
-			setLesson((prev) => (prev ? { ...prev, completed: true } : prev));
-			setCurriculum((prev) => prev?.map((item) => (item.order === lessonNumber ? { ...item, completed: true } : item)) ?? prev);
+			await markCurrentComplete();
 		} catch {
 			setMarkError("No pudimos registrar el progreso. Probá de nuevo.");
 		} finally {
 			setMarking(false);
+		}
+	}
+
+	/** "Siguiente lección" también registra el progreso de la lección actual
+	 * antes de navegar, así avanzar sirve como señal de "la terminé" sin
+	 * necesitar el botón manual. Si el POST falla, no navega — mismo criterio
+	 * que "Marcar como completada": mejor avisar que perder el dato en
+	 * silencio. */
+	async function handleNext(url: string) {
+		if (lesson?.completed) {
+			window.location.href = url;
+			return;
+		}
+		setAdvancing(true);
+		setMarkError(null);
+		try {
+			await markCurrentComplete();
+			window.location.href = url;
+		} catch {
+			setMarkError("No pudimos registrar el progreso. Probá de nuevo.");
+		} finally {
+			setAdvancing(false);
 		}
 	}
 
@@ -101,7 +128,14 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 	const pdfs = lesson.content.filter((item) => item.type === "pdf");
 	const markdownItems = lesson.content.filter((item) => item.type === "markdown");
 	const embedUrl = video?.youtubeUrl ? toYoutubeEmbedUrl(video.youtubeUrl) : null;
-	const nextLesson = curriculum.find((item) => item.order === lessonNumber + 1);
+	// "Siguiente lección" prioriza la próxima pendiente hacia adelante — no
+	// simplemente order + 1 — porque no hay bloqueo secuencial (ver
+	// LessonHandler en /api) y alguien pudo haber navegado fuera de orden.
+	// Si ya completó todo lo que sigue, cae a cualquier otra pendiente que
+	// haya quedado atrás; si no queda ninguna pendiente, no hay "siguiente".
+	const nextLesson =
+		curriculum.find((item) => item.order > lessonNumber && !item.completed) ??
+		curriculum.find((item) => item.order !== lessonNumber && !item.completed);
 
 	return (
 		<div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_320px] lg:items-start">
@@ -222,9 +256,14 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 				</ol>
 
 				{nextLesson && (
-					<a href={`/cursos/${courseSlug}/${nextLesson.order}`} className="btn btn-primary mt-5 w-full">
-						Siguiente lección →
-					</a>
+					<button
+						type="button"
+						onClick={() => handleNext(`/cursos/${courseSlug}/${nextLesson.order}`)}
+						disabled={advancing}
+						className="btn btn-primary mt-5 w-full"
+					>
+						{advancing ? "Guardando…" : "Siguiente lección →"}
+					</button>
 				)}
 			</aside>
 		</div>
