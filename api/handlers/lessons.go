@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
+	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
+	"github.com/ferjmc/god-edu/api/models"
 )
 
 // LessonHandler agrupa los endpoints de lecciones dentro de un curso.
@@ -22,9 +25,10 @@ import (
 // — mantiene el handler simple y no le pone un techo artificial a quien
 // quiere repasar o adelantarse.
 type LessonHandler struct {
-	Courses *db.CourseRepo
-	Users   *db.UserRepo
-	Lessons *db.LessonRepo
+	Courses      *db.CourseRepo
+	Users        *db.UserRepo
+	Lessons      *db.LessonRepo
+	Certificates *certapp.Service
 }
 
 type lessonSummaryResponse struct {
@@ -191,5 +195,51 @@ func (h *LessonHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.issueCertificateIfComplete(r.Context(), course, userID)
+
 	writeJSON(w, http.StatusOK, lessonCompleteResponse{Completed: true})
+}
+
+// issueCertificateIfComplete emite el certificado del curso si, tras marcar
+// esta lección, el usuario completó el 100% de la currícula y el curso
+// tiene CertificateEnabled. Best-effort a propósito, igual que el resto de
+// esta función: un problema emitiendo el certificado no debe impedir que la
+// lección quede marcada como completa, que es la acción que el usuario
+// realmente pidió. La idempotencia real (no emitir dos veces) la garantiza
+// la constraint UNIQUE(user_id, course_id) del lado del repositorio de
+// certificate, no un chequeo acá.
+func (h *LessonHandler) issueCertificateIfComplete(ctx context.Context, course models.Course, userID int64) {
+	if !course.CertificateEnabled {
+		return
+	}
+
+	lessons, err := h.Lessons.ListByCourse(ctx, course.ID, userID)
+	if err != nil {
+		log.Printf("lessons: verificando elegibilidad de certificado (curso %d, usuario %d): %v", course.ID, userID, err)
+		return
+	}
+	if len(lessons) == 0 {
+		return
+	}
+	for _, l := range lessons {
+		if !l.Completed {
+			return
+		}
+	}
+
+	user, err := h.Users.GetByID(ctx, userID)
+	if err != nil {
+		log.Printf("lessons: obteniendo usuario %d para emitir certificado: %v", userID, err)
+		return
+	}
+
+	err = h.Certificates.IssueIfEligible(ctx, certapp.IssueInput{
+		UserID:        userID,
+		CourseID:      course.ID,
+		RecipientName: user.Name,
+		CourseTitle:   course.Title,
+	})
+	if err != nil {
+		log.Printf("lessons: emitiendo certificado (curso %d, usuario %d): %v", course.ID, userID, err)
+	}
 }

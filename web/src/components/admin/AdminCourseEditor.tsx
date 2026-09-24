@@ -1,7 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useStore } from "@nanostores/react";
 import { $auth, initAuth } from "../../stores/auth";
-import { getAdminCourse, updateCourseDetails, setCoursePublished, deleteCourse, type AdminCourseDetail } from "../../lib/api/admin";
+import {
+	getAdminCourse,
+	updateCourseDetails,
+	setCoursePublished,
+	setCourseCertificateEnabled,
+	deleteCourse,
+	type AdminCourseDetail,
+} from "../../lib/api/admin";
 import { ApiError } from "../../lib/api/client";
 import LessonManager from "./LessonManager";
 
@@ -30,6 +37,7 @@ export default function AdminCourseEditor({ slug }: Props) {
 	const [detailsError, setDetailsError] = useState<string | null>(null);
 
 	const [togglingPublished, setTogglingPublished] = useState(false);
+	const [togglingCertificate, setTogglingCertificate] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -80,6 +88,19 @@ export default function AdminCourseEditor({ slug }: Props) {
 			setDetailsError(err instanceof ApiError ? err.message : "No se pudo actualizar el estado.");
 		} finally {
 			setTogglingPublished(false);
+		}
+	}
+
+	async function handleToggleCertificate() {
+		if (!course) return;
+		setTogglingCertificate(true);
+		try {
+			await setCourseCertificateEnabled(slug, !course.certificateEnabled);
+			await reload();
+		} catch (err) {
+			setDetailsError(err instanceof ApiError ? err.message : "No se pudo actualizar el certificado.");
+		} finally {
+			setTogglingCertificate(false);
 		}
 	}
 
@@ -156,6 +177,17 @@ export default function AdminCourseEditor({ slug }: Props) {
 					</button>
 				</div>
 			</div>
+
+			<label className="flex w-fit items-center gap-2 font-ui text-sm text-ink-80">
+				<input
+					type="checkbox"
+					className="checkbox checkbox-sm"
+					checked={course.certificateEnabled}
+					disabled={togglingCertificate}
+					onChange={() => void handleToggleCertificate()}
+				/>
+				Otorga certificado al completarse
+			</label>
 
 			<form onSubmit={handleSaveDetails} className="flex max-w-xl flex-col gap-4">
 				<label className="flex flex-col gap-1">

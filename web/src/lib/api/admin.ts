@@ -12,6 +12,7 @@ export type AdminCourse = {
 	slug: string;
 	description: string | null;
 	published: boolean;
+	certificateEnabled: boolean;
 	// Go marshals a nil/empty slice as null, not [] — always guard for it.
 	visibleRoles: UserRole[] | null;
 	createdAt: string;
@@ -75,6 +76,12 @@ export function updateCourseDetails(slug: string, input: { title: string; descri
 
 export function setCoursePublished(slug: string, published: boolean): Promise<void> {
 	return apiFetch<void>(`/admin/courses/${slug}`, { method: "PATCH", body: { published } });
+}
+
+/** Prende/apaga la emisión automática de certificado al completar este
+ * curso al 100% (ver internal/certificate en el API). */
+export function setCourseCertificateEnabled(slug: string, enabled: boolean): Promise<void> {
+	return apiFetch<void>(`/admin/courses/${slug}/certificate`, { method: "PATCH", body: { enabled } });
 }
 
 /** Borra el curso completo (cascada: lecciones, contenido, inscripciones,

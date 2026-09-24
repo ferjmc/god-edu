@@ -15,7 +15,11 @@ type Course struct {
 	// significa "sin restricción": visible para cualquier usuario logueado.
 	// Es opt-in por curso, no opt-out (ver VisibleTo).
 	VisibleRoles []UserRole
-	CreatedAt    time.Time
+	// CertificateEnabled indica si completar este curso al 100% emite un
+	// certificado (ver internal/certificate). Configurable por el admin,
+	// arranca en false.
+	CertificateEnabled bool
+	CreatedAt          time.Time
 }
 
 // VisibleTo indica si un usuario con el rol dado puede ver el detalle de
@@ -42,12 +46,13 @@ func (c Course) VisibleTo(role UserRole) bool {
 // lleva VisibleRoles (no hace falta una vez que el filtro de acceso ya se
 // aplicó en la query).
 type CourseProgress struct {
-	ID               int64
-	Title            string
-	Slug             string
-	Description      *string
-	TotalLessons     int
-	CompletedLessons int
+	ID                 int64
+	Title              string
+	Slug               string
+	Description        *string
+	CertificateEnabled bool
+	TotalLessons       int
+	CompletedLessons   int
 	// NextLessonOrder es el order_index de la primera lección pendiente
 	// (nil si el curso no tiene lecciones o ya están todas completadas) —
 	// permite que "Continuar"/"Empezar" salten directo a la lección en vez

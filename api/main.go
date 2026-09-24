@@ -20,6 +20,10 @@ import (
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
 	"github.com/ferjmc/god-edu/api/handlers"
+	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
+	certpg "github.com/ferjmc/god-edu/api/internal/certificate/infrastructure/postgres"
+	enrollapp "github.com/ferjmc/god-edu/api/internal/enrollment/application"
+	enrollpg "github.com/ferjmc/god-edu/api/internal/enrollment/infrastructure/postgres"
 	"github.com/ferjmc/god-edu/api/storage"
 )
 
@@ -46,6 +50,13 @@ func main() {
 	courses := db.NewCourseRepo(pool)
 	lessons := db.NewLessonRepo(pool)
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
+
+	// enrollment y certificate: primeros dominios construidos con capas
+	// domain/application/infrastructure (ver CLAUDE.md, "Arquitectura del
+	// backend") — el resto de la API sigue con la estructura plana de
+	// siempre (users, courses, lessons más arriba).
+	enrollments := enrollapp.NewService(enrollpg.NewRepository(pool))
+	certificates := certapp.NewService(certpg.NewRepository(pool))
 
 	var sender handlers.EmailSender
 	if cfg.ResendAPIKey != "" {
@@ -93,11 +104,12 @@ func main() {
 		SuccessRedirectURL: cfg.AppBaseURL + "/",
 		FailureRedirectURL: cfg.AppBaseURL + "/ingresar?error=oauth",
 	}
-	courseHandler := &handlers.CourseHandler{Courses: courses, Users: users}
-	lessonHandler := &handlers.LessonHandler{Courses: courses, Users: users, Lessons: lessons}
+	courseHandler := &handlers.CourseHandler{Courses: courses, Users: users, Enrollments: enrollments, Certificates: certificates}
+	lessonHandler := &handlers.LessonHandler{Courses: courses, Users: users, Lessons: lessons, Certificates: certificates}
 	adminHandler := &handlers.AdminHandler{Users: users, Courses: courses, Lessons: lessons, R2: r2}
+	certificateHandler := &handlers.CertificateHandler{Certificates: certificates}
 
-	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, adminHandler, users, jwtManager)
+	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, adminHandler, certificateHandler, users, jwtManager)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -118,7 +130,7 @@ func main() {
 // newRouter arma todas las rutas de la API. Las que requieren sesión
 // (auth.RequireAuth) quedan agrupadas aparte para que quede a la vista
 // cuáles son públicas y cuáles no.
-func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *handlers.OAuthHandler, courseHandler *handlers.CourseHandler, lessonHandler *handlers.LessonHandler, adminHandler *handlers.AdminHandler, users *db.UserRepo, jwtManager *auth.JWTManager) http.Handler {
+func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *handlers.OAuthHandler, courseHandler *handlers.CourseHandler, lessonHandler *handlers.LessonHandler, adminHandler *handlers.AdminHandler, certificateHandler *handlers.CertificateHandler, users *db.UserRepo, jwtManager *auth.JWTManager) http.Handler {
 	r := chi.NewRouter()
 	// RealIP primero: sin esto, detrás del proxy de Coolify/Caddy todos los
 	// requests llegan con el mismo r.RemoteAddr (el del proxy), y el rate
@@ -140,6 +152,11 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 
 	r.Get("/health", handlers.Health)
 
+	// Verificación pública de certificados: sin sesión a propósito — quien
+	// escanea un QR o recibe un link de certificado no necesariamente tiene
+	// cuenta en la plataforma (ver handlers.CertificateHandler).
+	r.Get("/certificates/{code}", certificateHandler.Verify)
+
 	r.Route("/courses", func(r chi.Router) {
 		r.Get("/", courseHandler.List)
 
@@ -147,6 +164,7 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 			r.Use(auth.RequireAuth(jwtManager))
 			r.Get("/mine", courseHandler.Mine)
 			r.Get("/{slug}", courseHandler.Detail)
+			r.Post("/{slug}/enroll", courseHandler.Enroll)
 			r.Get("/{slug}/lessons", lessonHandler.List)
 			r.Get("/{slug}/lessons/{order}", lessonHandler.Detail)
 			r.Post("/{slug}/lessons/{order}/complete", lessonHandler.MarkComplete)
@@ -167,6 +185,7 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 		r.Put("/{slug}", adminHandler.UpdateCourseDetails)
 		r.Patch("/{slug}", adminHandler.SetPublished)
 		r.Delete("/{slug}", adminHandler.DeleteCourse)
+		r.Patch("/{slug}/certificate", adminHandler.SetCertificateEnabled)
 		r.Post("/{slug}/lessons", adminHandler.CreateLesson)
 		r.Put("/{slug}/lessons/{order}", adminHandler.UpdateLesson)
 		r.Delete("/{slug}/lessons/{order}", adminHandler.DeleteLesson)

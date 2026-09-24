@@ -22,11 +22,11 @@ func NewCourseRepo(pool *pgxpool.Pool) *CourseRepo {
 }
 
 // scanCourse escanea una fila con las columnas id, title, slug,
-// description, published, created_at — comunes a ListPublished, ListAll,
-// GetBySlug y GetBySlugAny.
+// description, published, certificate_enabled, created_at — comunes a
+// ListPublished, ListAll, GetBySlug y GetBySlugAny.
 func scanCourse(row pgx.Row) (models.Course, error) {
 	var c models.Course
-	err := row.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.Published, &c.CertificateEnabled, &c.CreatedAt)
 	return c, err
 }
 
@@ -48,7 +48,7 @@ func (r *CourseRepo) scanOne(row pgx.Row) (models.Course, error) {
 // cursos en borrador (published = false) nunca salen de acá.
 func (r *CourseRepo) ListPublished(ctx context.Context) ([]models.Course, error) {
 	const q = `
-		SELECT id, title, slug, description, published, created_at
+		SELECT id, title, slug, description, published, certificate_enabled, created_at
 		FROM courses
 		WHERE published = true
 		ORDER BY created_at DESC
@@ -79,7 +79,7 @@ func (r *CourseRepo) ListPublished(ctx context.Context) ([]models.Course, error)
 // pública) — necesita ver los borradores para poder seguir cargándolos.
 func (r *CourseRepo) ListAll(ctx context.Context) ([]models.Course, error) {
 	const q = `
-		SELECT id, title, slug, description, published, created_at
+		SELECT id, title, slug, description, published, certificate_enabled, created_at
 		FROM courses
 		ORDER BY created_at DESC
 	`
@@ -110,7 +110,7 @@ func (r *CourseRepo) ListAll(ctx context.Context) ([]models.Course, error) {
 // existen en borrador.
 func (r *CourseRepo) GetBySlug(ctx context.Context, slug string) (models.Course, error) {
 	const q = `
-		SELECT id, title, slug, description, published, created_at
+		SELECT id, title, slug, description, published, certificate_enabled, created_at
 		FROM courses
 		WHERE slug = $1 AND published = true
 	`
@@ -134,7 +134,7 @@ func (r *CourseRepo) GetBySlug(ctx context.Context, slug string) (models.Course,
 // necesita poder seguir viéndolo y editándolo igual.
 func (r *CourseRepo) GetBySlugAny(ctx context.Context, slug string) (models.Course, error) {
 	const q = `
-		SELECT id, title, slug, description, published, created_at
+		SELECT id, title, slug, description, published, certificate_enabled, created_at
 		FROM courses
 		WHERE slug = $1
 	`
@@ -219,6 +219,20 @@ func (r *CourseRepo) SetPublished(ctx context.Context, slug string, published bo
 	return nil
 }
 
+// SetCertificateEnabled prende o apaga la emisión de certificado para un
+// curso. Calcado de SetPublished.
+func (r *CourseRepo) SetCertificateEnabled(ctx context.Context, slug string, enabled bool) error {
+	const q = `UPDATE courses SET certificate_enabled = $1 WHERE slug = $2`
+	tag, err := r.pool.Exec(ctx, q, enabled, slug)
+	if err != nil {
+		return fmt.Errorf("db: actualizando certificate_enabled de curso %q: %w", slug, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ListVisibleWithProgress devuelve, para un usuario y su rol, los cursos
 // publicados y visibles para ese rol (mismo criterio que Course.VisibleTo:
 // sin restricción configurada, o el rol está en course_visible_roles),
@@ -235,7 +249,7 @@ func (r *CourseRepo) SetPublished(ctx context.Context, slug string, published bo
 func (r *CourseRepo) ListVisibleWithProgress(ctx context.Context, userID int64, role models.UserRole) ([]models.CourseProgress, error) {
 	const q = `
 		SELECT
-			c.id, c.title, c.slug, c.description,
+			c.id, c.title, c.slug, c.description, c.certificate_enabled,
 			COUNT(l.id) AS total_lessons,
 			COUNT(lp.id) FILTER (WHERE lp.completed) AS completed_lessons,
 			MIN(l.order_index) FILTER (WHERE lp.completed IS NOT TRUE) AS next_lesson_order
@@ -260,7 +274,7 @@ func (r *CourseRepo) ListVisibleWithProgress(ctx context.Context, userID int64, 
 	var courses []models.CourseProgress
 	for rows.Next() {
 		var c models.CourseProgress
-		if err := rows.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.TotalLessons, &c.CompletedLessons, &c.NextLessonOrder); err != nil {
+		if err := rows.Scan(&c.ID, &c.Title, &c.Slug, &c.Description, &c.CertificateEnabled, &c.TotalLessons, &c.CompletedLessons, &c.NextLessonOrder); err != nil {
 			return nil, fmt.Errorf("db: leyendo curso con progreso: %w", err)
 		}
 		courses = append(courses, c)

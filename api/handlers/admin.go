@@ -58,24 +58,26 @@ var reservedSlugs = map[string]bool{"mine": true}
 // todo lo que un admin necesita para decidir qué tocar — estado de
 // publicación, roles con acceso restringido y fecha de alta.
 type adminCourseResponse struct {
-	ID           int64             `json:"id"`
-	Title        string            `json:"title"`
-	Slug         string            `json:"slug"`
-	Description  *string           `json:"description"`
-	Published    bool              `json:"published"`
-	VisibleRoles []models.UserRole `json:"visibleRoles"`
-	CreatedAt    time.Time         `json:"createdAt"`
+	ID                 int64             `json:"id"`
+	Title              string            `json:"title"`
+	Slug               string            `json:"slug"`
+	Description        *string           `json:"description"`
+	Published          bool              `json:"published"`
+	CertificateEnabled bool              `json:"certificateEnabled"`
+	VisibleRoles       []models.UserRole `json:"visibleRoles"`
+	CreatedAt          time.Time         `json:"createdAt"`
 }
 
 func toAdminCourseResponse(c models.Course) adminCourseResponse {
 	return adminCourseResponse{
-		ID:           c.ID,
-		Title:        c.Title,
-		Slug:         c.Slug,
-		Description:  c.Description,
-		Published:    c.Published,
-		VisibleRoles: c.VisibleRoles,
-		CreatedAt:    c.CreatedAt,
+		ID:                 c.ID,
+		Title:              c.Title,
+		Slug:               c.Slug,
+		Description:        c.Description,
+		Published:          c.Published,
+		CertificateEnabled: c.CertificateEnabled,
+		VisibleRoles:       c.VisibleRoles,
+		CreatedAt:          c.CreatedAt,
 	}
 }
 
@@ -218,7 +220,7 @@ func (h *AdminHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, toCourseResponse(course))
+	writeJSON(w, http.StatusCreated, toCourseResponse(course, false))
 }
 
 // --- Publicar / despublicar curso ---
@@ -242,6 +244,35 @@ func (h *AdminHandler) SetPublished(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("admin: publicando curso %q: %v", slug, err)
+		writeError(w, http.StatusInternalServerError, "no se pudo actualizar el curso")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Certificado ---
+
+type setCertificateEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SetCertificateEnabled prende o apaga la emisión automática de certificado
+// al completar este curso al 100% (ver internal/certificate).
+func (h *AdminHandler) SetCertificateEnabled(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+
+	var req setCertificateEnabledRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+
+	if err := h.Courses.SetCertificateEnabled(r.Context(), slug, req.Enabled); err != nil {
+		if handleNotFound(w, err, "curso no encontrado") {
+			return
+		}
+		log.Printf("admin: actualizando certificate_enabled de curso %q: %v", slug, err)
 		writeError(w, http.StatusInternalServerError, "no se pudo actualizar el curso")
 		return
 	}
