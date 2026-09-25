@@ -9,9 +9,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ferjmc/god-edu/api/auth"
-	"github.com/ferjmc/god-edu/api/db"
 	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
-	"github.com/ferjmc/god-edu/api/models"
+	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
+	coursedomain "github.com/ferjmc/god-edu/api/internal/course/domain"
+	lessonapp "github.com/ferjmc/god-edu/api/internal/lesson/application"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
 )
 
 // LessonHandler agrupa los endpoints de lecciones dentro de un curso.
@@ -25,9 +27,9 @@ import (
 // — mantiene el handler simple y no le pone un techo artificial a quien
 // quiere repasar o adelantarse.
 type LessonHandler struct {
-	Courses      *db.CourseRepo
-	Users        *db.UserRepo
-	Lessons      *db.LessonRepo
+	Courses      *courseapp.Service
+	Users        *userapp.Service
+	Lessons      *lessonapp.Service
 	Certificates *certapp.Service
 }
 
@@ -89,7 +91,7 @@ type lessonDetailResponse struct {
 }
 
 // Detail devuelve una lección puntual (identificada por su orden dentro
-// del curso, no por id — ver LessonRepo.GetByCourseAndOrder) con todo su
+// del curso, no por id — ver lessonpg.Repository.GetByCourseAndOrder) con todo su
 // contenido: video, PDFs y/o texto markdown, en el orden en que se cargó.
 func (h *LessonHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
@@ -208,7 +210,7 @@ func (h *LessonHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 // realmente pidió. La idempotencia real (no emitir dos veces) la garantiza
 // la constraint UNIQUE(user_id, course_id) del lado del repositorio de
 // certificate, no un chequeo acá.
-func (h *LessonHandler) issueCertificateIfComplete(ctx context.Context, course models.Course, userID int64) {
+func (h *LessonHandler) issueCertificateIfComplete(ctx context.Context, course coursedomain.Course, userID int64) {
 	if !course.CertificateEnabled {
 		return
 	}

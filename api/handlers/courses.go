@@ -11,15 +11,17 @@ import (
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
+	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
+	coursedomain "github.com/ferjmc/god-edu/api/internal/course/domain"
 	enrollapp "github.com/ferjmc/god-edu/api/internal/enrollment/application"
-	"github.com/ferjmc/god-edu/api/models"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
 )
 
 // CourseHandler agrupa los endpoints de cursos: List es público, el resto
 // requiere sesión (ver newRouter en main.go).
 type CourseHandler struct {
-	Courses      *db.CourseRepo
-	Users        *db.UserRepo
+	Courses      *courseapp.Service
+	Users        *userapp.Service
 	Enrollments  *enrollapp.Service
 	Certificates *certapp.Service
 }
@@ -42,7 +44,7 @@ type courseResponse struct {
 	Enrolled bool `json:"enrolled"`
 }
 
-func toCourseResponse(c models.Course, enrolled bool) courseResponse {
+func toCourseResponse(c coursedomain.Course, enrolled bool) courseResponse {
 	return courseResponse{
 		ID:                 c.ID,
 		Title:              c.Title,
@@ -150,7 +152,7 @@ type courseProgressResponse struct {
 	CertificateCode *string    `json:"certificateCode,omitempty"`
 }
 
-func toCourseProgressResponse(c models.CourseProgress) courseProgressResponse {
+func toCourseProgressResponse(c coursedomain.CourseProgress) courseProgressResponse {
 	percent := 0
 	if c.TotalLessons > 0 {
 		percent = int(float64(c.CompletedLessons) / float64(c.TotalLessons) * 100)

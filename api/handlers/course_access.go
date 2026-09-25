@@ -8,11 +8,13 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
-	"github.com/ferjmc/god-edu/api/models"
+	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
+	coursedomain "github.com/ferjmc/god-edu/api/internal/course/domain"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
 )
 
 // errForbidden indica que el usuario está autenticado pero no tiene un rol
-// habilitado para ver este curso (ver models.Course.VisibleTo).
+// habilitado para ver este curso (ver coursedomain.Course.VisibleTo).
 var errForbidden = errors.New("acceso no autorizado a este curso")
 
 // errUnauthenticated indica que no había un usuario válido en el contexto.
@@ -27,23 +29,23 @@ var errUnauthenticated = errors.New("no autenticado")
 // cualquier endpoint que exponga contenido de un curso — no solo su ficha
 // de listado — pasa por acá antes de tocar la base, para no repetir el
 // mismo chequeo de rol en cada uno.
-func resolveVisibleCourse(ctx context.Context, courses *db.CourseRepo, users *db.UserRepo, slug string) (models.Course, error) {
+func resolveVisibleCourse(ctx context.Context, courses *courseapp.Service, users *userapp.Service, slug string) (coursedomain.Course, error) {
 	course, err := courses.GetBySlug(ctx, slug)
 	if err != nil {
-		return models.Course{}, err // db.ErrNotFound se propaga tal cual
+		return coursedomain.Course{}, err // db.ErrNotFound se propaga tal cual
 	}
 
 	userID, ok := auth.UserIDFromContext(ctx)
 	if !ok {
-		return models.Course{}, errUnauthenticated
+		return coursedomain.Course{}, errUnauthenticated
 	}
 	user, err := users.GetByID(ctx, userID)
 	if err != nil {
-		return models.Course{}, errUnauthenticated
+		return coursedomain.Course{}, errUnauthenticated
 	}
 
 	if !course.VisibleTo(user.Role) {
-		return models.Course{}, errForbidden
+		return coursedomain.Course{}, errForbidden
 	}
 
 	return course, nil

@@ -8,7 +8,7 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
-	"github.com/ferjmc/god-edu/api/models"
+	authtokendomain "github.com/ferjmc/god-edu/api/internal/authtoken/domain"
 )
 
 type verifyEmailRequest struct {
@@ -27,7 +27,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := h.Tokens.GetValidByHash(r.Context(), auth.HashToken(req.Token), models.TokenPurposeEmailVerification)
+	tok, err := h.Tokens.GetValidByHash(r.Context(), auth.HashToken(req.Token), authtokendomain.TokenPurposeEmailVerification)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "el link de verificación es inválido o venció")
 		return

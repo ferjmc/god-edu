@@ -12,12 +12,13 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
-	"github.com/ferjmc/god-edu/api/models"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
+	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
 )
 
 // OAuthHandler agrupa el flujo de login con Google/Facebook vía goth.
 type OAuthHandler struct {
-	Users *db.UserRepo
+	Users *userapp.Service
 	JWT   *auth.JWTManager
 	// SuccessRedirectURL y FailureRedirectURL son páginas del frontend
 	// (home y /ingresar, ver main.go) a las que se redirige después del
@@ -75,22 +76,22 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 // findOrCreateOAuthUser busca un usuario existente por email; si no existe,
 // crea uno nuevo con email_verified = true (el provider ya lo verificó).
 // Si existe pero todavía no estaba verificado, "reclama" la cuenta — ver
-// el comentario de UserRepo.ClaimByOAuth.
-func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider string, gu goth.User) (models.User, error) {
+// el comentario de userpg.Repository.ClaimByOAuth.
+func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider string, gu goth.User) (userdomain.User, error) {
 	existing, err := h.Users.GetByEmail(ctx, gu.Email)
 	if err == nil {
 		if !existing.EmailVerified {
-			if err := h.Users.ClaimByOAuth(ctx, existing.ID, models.AuthProvider(provider)); err != nil {
-				return models.User{}, err
+			if err := h.Users.ClaimByOAuth(ctx, existing.ID, userdomain.AuthProvider(provider)); err != nil {
+				return userdomain.User{}, err
 			}
 			existing.EmailVerified = true
 			existing.PasswordHash = nil
-			existing.AuthProvider = models.AuthProvider(provider)
+			existing.AuthProvider = userdomain.AuthProvider(provider)
 		}
 		return existing, nil
 	}
 	if !errors.Is(err, db.ErrNotFound) {
-		return models.User{}, err
+		return userdomain.User{}, err
 	}
 
 	name := gu.Name
@@ -101,11 +102,11 @@ func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider strin
 		name = gu.Email
 	}
 
-	return h.Users.Create(ctx, models.User{
+	return h.Users.Create(ctx, userdomain.User{
 		Email:         gu.Email,
 		Name:          name,
-		AuthProvider:  models.AuthProvider(provider),
+		AuthProvider:  userdomain.AuthProvider(provider),
 		EmailVerified: true,
-		Role:          models.RolePublicMember,
+		Role:          userdomain.RolePublicMember,
 	})
 }

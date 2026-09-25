@@ -31,7 +31,7 @@ type IssueInput struct {
 // que la elegibilidad (100% del curso completado y course.CertificateEnabled)
 // la decide el caller (LessonHandler.MarkComplete) antes de llamar acá: esa
 // información vive en los dominios Course/Lesson, no en este — evita que
-// certificate dependa de db.CourseRepo/db.LessonRepo solo para repetir un
+// certificate dependa de courseapp/lessonapp solo para repetir un
 // chequeo que el caller ya hizo. Issue en sí es idempotente (constraint
 // UNIQUE(user_id, course_id) del lado del repositorio): llamar dos veces
 // para el mismo usuario+curso no emite un segundo certificado.

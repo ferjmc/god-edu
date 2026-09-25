@@ -20,10 +20,18 @@ import (
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
 	"github.com/ferjmc/god-edu/api/handlers"
+	authtokenapp "github.com/ferjmc/god-edu/api/internal/authtoken/application"
+	authtokenpg "github.com/ferjmc/god-edu/api/internal/authtoken/infrastructure/postgres"
 	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
 	certpg "github.com/ferjmc/god-edu/api/internal/certificate/infrastructure/postgres"
+	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
+	coursepg "github.com/ferjmc/god-edu/api/internal/course/infrastructure/postgres"
 	enrollapp "github.com/ferjmc/god-edu/api/internal/enrollment/application"
 	enrollpg "github.com/ferjmc/god-edu/api/internal/enrollment/infrastructure/postgres"
+	lessonapp "github.com/ferjmc/god-edu/api/internal/lesson/application"
+	lessonpg "github.com/ferjmc/god-edu/api/internal/lesson/infrastructure/postgres"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
+	userpg "github.com/ferjmc/god-edu/api/internal/user/infrastructure/postgres"
 	"github.com/ferjmc/god-edu/api/storage"
 )
 
@@ -45,16 +53,22 @@ func main() {
 		log.Fatalf("main: aplicando migraciones: %v", err)
 	}
 
-	users := db.NewUserRepo(pool)
-	tokens := db.NewAuthTokenRepo(pool)
-	courses := db.NewCourseRepo(pool)
-	lessons := db.NewLessonRepo(pool)
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
 
-	// enrollment y certificate: primeros dominios construidos con capas
-	// domain/application/infrastructure (ver CLAUDE.md, "Arquitectura del
-	// backend") — el resto de la API sigue con la estructura plana de
-	// siempre (users, courses, lessons más arriba).
+	// course, lesson, enrollment, certificate, user y authtoken: dominios
+	// construidos con capas domain/application/infrastructure (ver
+	// CLAUDE.md, "Arquitectura del backend") — course, lesson, user y
+	// authtoken fueron dominios PREEXISTENTES migrados a este patrón (antes
+	// vivían en db.CourseRepo/models.Course, db.LessonRepo/models.Lesson*,
+	// db.UserRepo/models.User y db.AuthTokenRepo/models.AuthToken
+	// respectivamente). Con esto, la migración incremental de dominios
+	// preexistentes queda completa: el paquete auth/ (JWT/cookies/OAuth/
+	// bcrypt) no se migra a propósito — no tiene forma de dominio, es
+	// infraestructura transversal sin persistencia propia.
+	users := userapp.NewService(userpg.NewRepository(pool))
+	tokens := authtokenapp.NewService(authtokenpg.NewRepository(pool))
+	courses := courseapp.NewService(coursepg.NewRepository(pool))
+	lessons := lessonapp.NewService(lessonpg.NewRepository(pool))
 	enrollments := enrollapp.NewService(enrollpg.NewRepository(pool))
 	certificates := certapp.NewService(certpg.NewRepository(pool))
 
@@ -130,7 +144,7 @@ func main() {
 // newRouter arma todas las rutas de la API. Las que requieren sesión
 // (auth.RequireAuth) quedan agrupadas aparte para que quede a la vista
 // cuáles son públicas y cuáles no.
-func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *handlers.OAuthHandler, courseHandler *handlers.CourseHandler, lessonHandler *handlers.LessonHandler, adminHandler *handlers.AdminHandler, certificateHandler *handlers.CertificateHandler, users *db.UserRepo, jwtManager *auth.JWTManager) http.Handler {
+func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *handlers.OAuthHandler, courseHandler *handlers.CourseHandler, lessonHandler *handlers.LessonHandler, adminHandler *handlers.AdminHandler, certificateHandler *handlers.CertificateHandler, users *userapp.Service, jwtManager *auth.JWTManager) http.Handler {
 	r := chi.NewRouter()
 	// RealIP primero: sin esto, detrás del proxy de Coolify/Caddy todos los
 	// requests llegan con el mismo r.RemoteAddr (el del proxy), y el rate
@@ -196,7 +210,7 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 	})
 
 	// /admin: consulta de usuarios.
-	// Detrás de sesión + rol ADMIN — ver handlers.RequireAdmin. 
+	// Detrás de sesión + rol ADMIN — ver handlers.RequireAdmin.
 	r.Route("/admin/users", func(r chi.Router) {
 		r.Use(auth.RequireAuth(jwtManager))
 		r.Use(handlers.RequireAdmin(users))

@@ -16,7 +16,12 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
-	"github.com/ferjmc/god-edu/api/models"
+	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
+	coursedomain "github.com/ferjmc/god-edu/api/internal/course/domain"
+	lessonapp "github.com/ferjmc/god-edu/api/internal/lesson/application"
+	lessondomain "github.com/ferjmc/god-edu/api/internal/lesson/domain"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
+	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
 	"github.com/ferjmc/god-edu/api/storage"
 )
 
@@ -35,9 +40,9 @@ const maxPDFUploadSize = 25 << 20
 // config.go): el resto de la API sigue funcionando, pero subir un PDF
 // devuelve 503 en vez de un panic por nil pointer.
 type AdminHandler struct {
-	Users   *db.UserRepo
-	Courses *db.CourseRepo
-	Lessons *db.LessonRepo
+	Users   *userapp.Service
+	Courses *courseapp.Service
+	Lessons *lessonapp.Service
 	R2      *storage.R2
 }
 
@@ -58,17 +63,17 @@ var reservedSlugs = map[string]bool{"mine": true}
 // todo lo que un admin necesita para decidir qué tocar — estado de
 // publicación, roles con acceso restringido y fecha de alta.
 type adminCourseResponse struct {
-	ID                 int64             `json:"id"`
-	Title              string            `json:"title"`
-	Slug               string            `json:"slug"`
-	Description        *string           `json:"description"`
-	Published          bool              `json:"published"`
-	CertificateEnabled bool              `json:"certificateEnabled"`
-	VisibleRoles       []models.UserRole `json:"visibleRoles"`
-	CreatedAt          time.Time         `json:"createdAt"`
+	ID                 int64                 `json:"id"`
+	Title              string                `json:"title"`
+	Slug               string                `json:"slug"`
+	Description        *string               `json:"description"`
+	Published          bool                  `json:"published"`
+	CertificateEnabled bool                  `json:"certificateEnabled"`
+	VisibleRoles       []userdomain.UserRole `json:"visibleRoles"`
+	CreatedAt          time.Time             `json:"createdAt"`
 }
 
-func toAdminCourseResponse(c models.Course) adminCourseResponse {
+func toAdminCourseResponse(c coursedomain.Course) adminCourseResponse {
 	return adminCourseResponse{
 		ID:                 c.ID,
 		Title:              c.Title,
@@ -205,7 +210,7 @@ func (h *AdminHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	course, err := h.Courses.Create(r.Context(), models.Course{
+	course, err := h.Courses.Create(r.Context(), coursedomain.Course{
 		Title:       req.Title,
 		Slug:        req.Slug,
 		Description: req.Description,
@@ -288,7 +293,7 @@ type updateCourseDetailsRequest struct {
 }
 
 // UpdateCourseDetails edita título y descripción de un curso. No toca el
-// slug (ver CourseRepo.UpdateDetails) ni el estado de publicación — eso
+// slug (ver coursepg.Repository.UpdateDetails) ni el estado de publicación — eso
 // sigue siendo SetPublished, a propósito, para no mezclar "editar contenido"
 // con "hacerlo visible".
 func (h *AdminHandler) UpdateCourseDetails(w http.ResponseWriter, r *http.Request) {
@@ -380,7 +385,7 @@ func (h *AdminHandler) cleanupLessonPDFs(ctx context.Context, lessonID int64) {
 	}
 
 	for _, c := range content {
-		if c.Type != models.ContentTypePDF || c.PDFURL == nil {
+		if c.Type != lessondomain.ContentTypePDF || c.PDFURL == nil {
 			continue
 		}
 		if err := h.R2.DeleteByURL(ctx, *c.PDFURL); err != nil {
@@ -427,7 +432,7 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lesson, err := h.Lessons.CreateLesson(r.Context(), models.Lesson{
+	lesson, err := h.Lessons.CreateLesson(r.Context(), lessondomain.Lesson{
 		CourseID:   course.ID,
 		Title:      req.Title,
 		OrderIndex: req.Order,
@@ -452,7 +457,7 @@ type updateLessonRequest struct {
 }
 
 // UpdateLesson renombra una lección. El orden no se puede tocar por acá —
-// ver LessonRepo.UpdateTitle.
+// ver lessonpg.Repository.UpdateTitle.
 func (h *AdminHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 	lesson, ok := h.resolveLesson(w, r)
 	if !ok {
@@ -534,23 +539,23 @@ func (h *AdminHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Title = title
 
-	content := models.LessonContent{LessonID: lesson.ID, Title: req.Title}
+	content := lessondomain.LessonContent{LessonID: lesson.ID, Title: req.Title}
 	switch req.Type {
-	case string(models.ContentTypeVideo):
+	case string(lessondomain.ContentTypeVideo):
 		if req.YoutubeURL == nil || strings.TrimSpace(*req.YoutubeURL) == "" {
 			writeError(w, http.StatusBadRequest, "youtubeUrl es obligatorio para type=video")
 			return
 		}
-		content.Type = models.ContentTypeVideo
+		content.Type = lessondomain.ContentTypeVideo
 		content.YoutubeURL = req.YoutubeURL
-	case string(models.ContentTypeMarkdown):
+	case string(lessondomain.ContentTypeMarkdown):
 		if req.Body == nil || strings.TrimSpace(*req.Body) == "" {
 			writeError(w, http.StatusBadRequest, "body es obligatorio para type=markdown")
 			return
 		}
-		content.Type = models.ContentTypeMarkdown
+		content.Type = lessondomain.ContentTypeMarkdown
 		content.Body = req.Body
-	case string(models.ContentTypePDF):
+	case string(lessondomain.ContentTypePDF):
 		writeError(w, http.StatusBadRequest, "para PDF usá POST .../content/pdf con el archivo, no este endpoint")
 		return
 	default:
@@ -641,11 +646,11 @@ func (h *AdminHandler) UploadPDFContent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	created, err := h.Lessons.CreateContent(r.Context(), models.LessonContent{
+	created, err := h.Lessons.CreateContent(r.Context(), lessondomain.LessonContent{
 		LessonID:   lesson.ID,
 		Title:      title,
 		OrderIndex: order,
-		Type:       models.ContentTypePDF,
+		Type:       lessondomain.ContentTypePDF,
 		PDFURL:     &pdfURL,
 	})
 	if err != nil {
@@ -665,32 +670,32 @@ func (h *AdminHandler) UploadPDFContent(w http.ResponseWriter, r *http.Request) 
 // resolveLesson lee slug + order de la URL (.../courses/{slug}/lessons/{order}/...)
 // y devuelve la lección correspondiente, o escribe la respuesta de error y
 // devuelve ok=false. Común a CreateContent y UploadPDFContent.
-func (h *AdminHandler) resolveLesson(w http.ResponseWriter, r *http.Request) (models.Lesson, bool) {
+func (h *AdminHandler) resolveLesson(w http.ResponseWriter, r *http.Request) (lessondomain.Lesson, bool) {
 	slug := chi.URLParam(r, "slug")
 	order, err := strconv.Atoi(chi.URLParam(r, "order"))
 	if err != nil || order < 1 {
 		writeError(w, http.StatusBadRequest, "número de lección inválido")
-		return models.Lesson{}, false
+		return lessondomain.Lesson{}, false
 	}
 
 	course, err := h.Courses.GetBySlugAny(r.Context(), slug)
 	if err != nil {
 		if handleNotFound(w, err, "curso no encontrado") {
-			return models.Lesson{}, false
+			return lessondomain.Lesson{}, false
 		}
 		log.Printf("admin: obteniendo curso %q: %v", slug, err)
 		writeError(w, http.StatusInternalServerError, "no se pudo obtener el curso")
-		return models.Lesson{}, false
+		return lessondomain.Lesson{}, false
 	}
 
 	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), course.ID, order)
 	if err != nil {
 		if handleNotFound(w, err, "lección no encontrada") {
-			return models.Lesson{}, false
+			return lessondomain.Lesson{}, false
 		}
 		log.Printf("admin: obteniendo lección %d/%d: %v", course.ID, order, err)
 		writeError(w, http.StatusInternalServerError, "no se pudo obtener la lección")
-		return models.Lesson{}, false
+		return lessondomain.Lesson{}, false
 	}
 
 	return lesson, true
@@ -726,17 +731,17 @@ func (h *AdminHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	req.Title = title
 
 	switch content.Type {
-	case models.ContentTypeVideo:
+	case lessondomain.ContentTypeVideo:
 		if req.YoutubeURL == nil || strings.TrimSpace(*req.YoutubeURL) == "" {
 			writeError(w, http.StatusBadRequest, "youtubeUrl es obligatorio para este contenido")
 			return
 		}
-	case models.ContentTypeMarkdown:
+	case lessondomain.ContentTypeMarkdown:
 		if req.Body == nil || strings.TrimSpace(*req.Body) == "" {
 			writeError(w, http.StatusBadRequest, "body es obligatorio para este contenido")
 			return
 		}
-	case models.ContentTypePDF:
+	case lessondomain.ContentTypePDF:
 		// Solo el título es editable acá; youtube_url/body quedan en null
 		// igual que hoy, no hace falta validar nada más.
 		req.YoutubeURL = nil
@@ -770,7 +775,7 @@ func (h *AdminHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.R2 != nil && content.Type == models.ContentTypePDF && content.PDFURL != nil {
+	if h.R2 != nil && content.Type == lessondomain.ContentTypePDF && content.PDFURL != nil {
 		if err := h.R2.DeleteByURL(r.Context(), *content.PDFURL); err != nil {
 			log.Printf("admin: borrando PDF de R2 (%s): %v", *content.PDFURL, err)
 		}
@@ -792,26 +797,26 @@ func (h *AdminHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 // (.../courses/{slug}/lessons/{order}/content/{contentOrder}) y devuelve la
 // lección y la pieza de contenido correspondientes, o escribe la respuesta
 // de error y devuelve ok=false. Común a UpdateContent y DeleteContent.
-func (h *AdminHandler) resolveContent(w http.ResponseWriter, r *http.Request) (models.Lesson, models.LessonContent, bool) {
+func (h *AdminHandler) resolveContent(w http.ResponseWriter, r *http.Request) (lessondomain.Lesson, lessondomain.LessonContent, bool) {
 	lesson, ok := h.resolveLesson(w, r)
 	if !ok {
-		return models.Lesson{}, models.LessonContent{}, false
+		return lessondomain.Lesson{}, lessondomain.LessonContent{}, false
 	}
 
 	contentOrder, err := strconv.Atoi(chi.URLParam(r, "contentOrder"))
 	if err != nil || contentOrder < 1 {
 		writeError(w, http.StatusBadRequest, "número de contenido inválido")
-		return models.Lesson{}, models.LessonContent{}, false
+		return lessondomain.Lesson{}, lessondomain.LessonContent{}, false
 	}
 
 	content, err := h.Lessons.GetContentByLessonAndOrder(r.Context(), lesson.ID, contentOrder)
 	if err != nil {
 		if handleNotFound(w, err, "contenido no encontrado") {
-			return models.Lesson{}, models.LessonContent{}, false
+			return lessondomain.Lesson{}, lessondomain.LessonContent{}, false
 		}
 		log.Printf("admin: obteniendo contenido %d/%d: %v", lesson.ID, contentOrder, err)
 		writeError(w, http.StatusInternalServerError, "no se pudo obtener el contenido")
-		return models.Lesson{}, models.LessonContent{}, false
+		return lessondomain.Lesson{}, lessondomain.LessonContent{}, false
 	}
 
 	return lesson, content, true
@@ -823,29 +828,29 @@ func (h *AdminHandler) resolveContent(w http.ResponseWriter, r *http.Request) (m
 // admin: lleva todo lo que un admin necesita para decidir qué tocar — estado de
 // usuario, roles y fecha de alta.
 type adminUserResponse struct {
-	ID            int64             `json:"id"`
-	Email         string            `json:"email"`
-	Name          string            `json:"name"`
-	AuthProvider  string            `json:"authProvider"`
-	EmailVerified bool              `json:"emailVerified"`
-	Role          string            `json:"role"`
-	CreatedAt     time.Time         `json:"createdAt"`
+	ID            int64     `json:"id"`
+	Email         string    `json:"email"`
+	Name          string    `json:"name"`
+	AuthProvider  string    `json:"authProvider"`
+	EmailVerified bool      `json:"emailVerified"`
+	Role          string    `json:"role"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
-func toAdminUserResponse(u models.User) adminUserResponse {
+func toAdminUserResponse(u userdomain.User) adminUserResponse {
 	return adminUserResponse{
-		ID:             u.ID,
-		Email: 			u.Email,
-		Name:           u.Name,
-		AuthProvider:   string(u.AuthProvider),
-		EmailVerified:  u.EmailVerified,
-		Role: 			string(u.Role),
-		CreatedAt:    	u.CreatedAt,
+		ID:            u.ID,
+		Email:         u.Email,
+		Name:          u.Name,
+		AuthProvider:  string(u.AuthProvider),
+		EmailVerified: u.EmailVerified,
+		Role:          string(u.Role),
+		CreatedAt:     u.CreatedAt,
 	}
 }
 
 // ListUsers devuelve todos los usuarios (activos e inactivos) para el
-// panel admin. 
+// panel admin.
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.Users.ListAll(r.Context())
 	if err != nil {
@@ -866,13 +871,10 @@ type updateUserRoleRequest struct {
 	Role string `json:"role"`
 }
 
-// UpdateUserRole cambia el rol de un usuario. Dos protecciones para no
-// dejar la plataforma sin ningún ADMIN: (1) un admin no puede cambiar su
-// propio rol por acá (evita autodegradarse sin querer), y (2) no se puede
-// bajar de ADMIN al último administrador que queda, sin importar quién
-// haga el cambio — esto último cubre el caso que el punto (1) solo no
-// alcanza a prevenir (un admin le baja el rol a otro admin, dejando cero).
-// Ambas protecciones se pueden saltar a mano contra la base si hace falta.
+// UpdateUserRole cambia el rol de un usuario. Las dos protecciones para no
+// dejar la plataforma sin ningún ADMIN (no auto-cambiarse el rol, no
+// degradar al último admin) viven consolidadas en userapp.Service.UpdateRole
+// — este handler solo traduce sus sentinels de error a la respuesta HTTP.
 func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -880,6 +882,12 @@ func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Chequeo temprano y barato: userapp.Service.UpdateRole igual lo repite
+	// (es la protección real, la que vale para cualquier caller futuro), pero
+	// hacerlo acá antes también preserva el orden de validación de siempre —
+	// un intento de auto-cambio con body inválido sigue devolviendo el error
+	// de auto-cambio, no un genérico "cuerpo inválido" por haber cambiado el
+	// orden de los chequeos en esta migración.
 	callerID, _ := auth.UserIDFromContext(r.Context()) // RequireAuth ya lo garantiza
 	if callerID == id {
 		writeError(w, http.StatusBadRequest, "no podés cambiar tu propio rol")
@@ -891,17 +899,27 @@ func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	role := models.UserRole(req.Role)
+	role := userdomain.UserRole(req.Role)
 	if !role.Valid() {
 		writeError(w, http.StatusBadRequest, "rol inválido")
 		return
 	}
 
-	if err := h.Users.UpdateRole(r.Context(), id, role); err != nil {
+	if err := h.Users.UpdateRole(r.Context(), callerID, id, role); err != nil {
 		if handleNotFound(w, err, "usuario no encontrado") {
 			return
 		}
-		if errors.Is(err, db.ErrLastAdmin) {
+		if errors.Is(err, userdomain.ErrSelfRoleChange) {
+			// Inalcanzable hoy por acá (el chequeo temprano de arriba ya
+			// cortó el caso callerID == id) — se deja de todos modos porque
+			// Service.UpdateRole puede devolver este error a CUALQUIER
+			// caller, no solo a este handler; si el chequeo temprano de
+			// arriba se sacara alguna vez, esta rama sigue traduciendo el
+			// error correctamente en vez de caer al 500 genérico de abajo.
+			writeError(w, http.StatusBadRequest, "no podés cambiar tu propio rol")
+			return
+		}
+		if errors.Is(err, userdomain.ErrLastAdmin) {
 			writeError(w, http.StatusBadRequest, "no podés quitarle el rol de admin al último administrador")
 			return
 		}

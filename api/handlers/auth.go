@@ -11,7 +11,10 @@ import (
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
-	"github.com/ferjmc/god-edu/api/models"
+	authtokenapp "github.com/ferjmc/god-edu/api/internal/authtoken/application"
+	authtokendomain "github.com/ferjmc/god-edu/api/internal/authtoken/domain"
+	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
+	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
 )
 
 // EmailSender es lo mínimo que AuthHandler necesita para mandar correo.
@@ -25,8 +28,8 @@ type EmailSender interface {
 // verificación de cuenta y reset de password. Se instancia una sola vez en
 // main.go con sus dependencias reales.
 type AuthHandler struct {
-	Users  *db.UserRepo
-	Tokens *db.AuthTokenRepo
+	Users  *userapp.Service
+	Tokens *authtokenapp.Service
 	JWT    *auth.JWTManager
 	Email  EmailSender
 	// AppBaseURL es el origen del frontend (ej. https://cursos.tuorg.org),
@@ -47,7 +50,7 @@ type loginRequest struct {
 }
 
 // userResponse es la representación pública de un usuario: nunca incluye
-// password_hash, aunque se agreguen campos a models.User más adelante.
+// password_hash, aunque se agreguen campos a userdomain.User más adelante.
 type userResponse struct {
 	ID            int64  `json:"id"`
 	Email         string `json:"email"`
@@ -57,7 +60,7 @@ type userResponse struct {
 	Role          string `json:"role"`
 }
 
-func toUserResponse(u models.User) userResponse {
+func toUserResponse(u userdomain.User) userResponse {
 	return userResponse{
 		ID:            u.ID,
 		Email:         u.Email,
@@ -98,12 +101,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.Users.Create(r.Context(), models.User{
+	created, err := h.Users.Create(r.Context(), userdomain.User{
 		Email:        req.Email,
 		PasswordHash: &hash,
 		Name:         req.Name,
-		AuthProvider: models.AuthProviderEmail,
-		Role:         models.RolePublicMember,
+		AuthProvider: userdomain.AuthProviderEmail,
+		Role:         userdomain.RolePublicMember,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
@@ -130,14 +133,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 // sendVerificationEmail genera un token de verificación y manda el email.
 // No devuelve error a propósito (ver comentario en Register); solo loguea.
-func (h *AuthHandler) sendVerificationEmail(ctx context.Context, user models.User) {
+func (h *AuthHandler) sendVerificationEmail(ctx context.Context, user userdomain.User) {
 	raw, hash, err := auth.GenerateToken()
 	if err != nil {
 		log.Printf("auth: generando token de verificación para user %d: %v", user.ID, err)
 		return
 	}
 
-	if _, err := h.Tokens.Create(ctx, user.ID, models.TokenPurposeEmailVerification, hash, auth.EmailVerificationTokenTTL); err != nil {
+	if _, err := h.Tokens.Create(ctx, user.ID, authtokendomain.TokenPurposeEmailVerification, hash, auth.EmailVerificationTokenTTL); err != nil {
 		log.Printf("auth: guardando token de verificación para user %d: %v", user.ID, err)
 		return
 	}

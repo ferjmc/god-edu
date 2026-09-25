@@ -11,7 +11,8 @@ import (
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
-	"github.com/ferjmc/god-edu/api/models"
+	authtokendomain "github.com/ferjmc/god-edu/api/internal/authtoken/domain"
+	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
 )
 
 type forgotPasswordRequest struct {
@@ -49,14 +50,14 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 // Best-effort, igual que sendVerificationEmail: no queremos que un
 // problema con Resend tire un 500 en un endpoint que ya de por sí no debe
 // revelar si el email existe.
-func (h *AuthHandler) sendPasswordResetEmail(ctx context.Context, user models.User) {
+func (h *AuthHandler) sendPasswordResetEmail(ctx context.Context, user userdomain.User) {
 	raw, hash, err := auth.GenerateToken()
 	if err != nil {
 		log.Printf("auth: generando token de reset para user %d: %v", user.ID, err)
 		return
 	}
 
-	if _, err := h.Tokens.Create(ctx, user.ID, models.TokenPurposePasswordReset, hash, auth.PasswordResetTokenTTL); err != nil {
+	if _, err := h.Tokens.Create(ctx, user.ID, authtokendomain.TokenPurposePasswordReset, hash, auth.PasswordResetTokenTTL); err != nil {
 		log.Printf("auth: guardando token de reset para user %d: %v", user.ID, err)
 		return
 	}
@@ -81,7 +82,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := h.Tokens.GetValidByHash(r.Context(), auth.HashToken(req.Token), models.TokenPurposePasswordReset)
+	tok, err := h.Tokens.GetValidByHash(r.Context(), auth.HashToken(req.Token), authtokendomain.TokenPurposePasswordReset)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "el link de restablecimiento es inválido o venció")
 		return

@@ -1,5 +1,8 @@
-// Package db contiene la conexión a Postgres y los repositorios que
-// traducen entre filas de la base y los structs de models.
+// Package db contiene el pool de conexión a Postgres, las migraciones, y
+// los sentinels de error compartidos (ErrNotFound, ErrConflict) que usan
+// los repositorios de cada dominio migrado (ver api/internal/<dominio>/
+// infrastructure/postgres) — ya no aloja repositorios propios: el último
+// (UserRepo) se movió a internal/user en esta misma serie de migraciones.
 package db
 
 import (
@@ -17,10 +20,6 @@ var ErrNotFound = errors.New("db: not found")
 // ErrConflict indica que una inserción violó una restricción única
 // (por ejemplo, un email que ya existe).
 var ErrConflict = errors.New("db: already exists")
-
-// ErrLastAdmin indica que un cambio de rol dejaría a la plataforma sin
-// ningún usuario ADMIN — ver UserRepo.UpdateRole.
-var ErrLastAdmin = errors.New("db: no se puede quitar el último admin")
 
 // NewPool abre un pool de conexiones a Postgres a partir de una cadena de
 // conexión (ver DATABASE_URL en .env.example) y confirma que responde.
