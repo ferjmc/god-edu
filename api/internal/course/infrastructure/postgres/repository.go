@@ -26,8 +26,8 @@ const uniqueViolation = "23505"
 // Repository implementa domain.Repository contra la tabla courses. Los
 // errores "no encontrado"/"ya existe" siguen siendo db.ErrNotFound y
 // db.ErrConflict (no sentinels propios): son vocabulario compartido que ya
-// usan handlers/respond.go (handleNotFound) y el resto de los handlers vía
-// errors.Is — mantenerlos evita tocar esa capa solo por moverse de paquete.
+// usan httpkit.HandleNotFound y el resto de los handlers vía errors.Is —
+// mantenerlos evita tocar esa capa solo por moverse de paquete.
 type Repository struct {
 	pool *pgxpool.Pool
 }

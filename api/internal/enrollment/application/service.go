@@ -10,7 +10,7 @@ import (
 )
 
 // Service es el punto de entrada del dominio enrollment para el resto de
-// la API (hoy, los handlers en api/handlers).
+// la API (hoy, infrastructure/http).
 type Service struct {
 	repo domain.Repository
 }

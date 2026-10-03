@@ -10,7 +10,7 @@ import (
 )
 
 // Service es el punto de entrada del dominio authtoken para el resto de la
-// API (hoy, los handlers en api/handlers). Wrapper delgado sobre el
+// API (hoy, infrastructure/http). Wrapper delgado sobre el
 // puerto — la invalidación de tokens previos ya es SQL transaccional
 // dentro de Create, en infrastructure; no hay lógica de negocio que mover
 // acá.

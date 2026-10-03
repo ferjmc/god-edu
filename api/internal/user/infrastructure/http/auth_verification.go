@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"encoding/json"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
+	"github.com/ferjmc/god-edu/api/httpkit"
 	authtokendomain "github.com/ferjmc/god-edu/api/internal/authtoken/domain"
 )
 
@@ -23,23 +24,23 @@ type verifyEmailRequest struct {
 func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	var req verifyEmailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
-		writeError(w, http.StatusBadRequest, "token requerido")
+		httpkit.WriteError(w, http.StatusBadRequest, "token requerido")
 		return
 	}
 
 	tok, err := h.Tokens.GetValidByHash(r.Context(), auth.HashToken(req.Token), authtokendomain.TokenPurposeEmailVerification)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "el link de verificación es inválido o venció")
+		httpkit.WriteError(w, http.StatusBadRequest, "el link de verificación es inválido o venció")
 		return
 	}
 
 	if err := h.Users.MarkEmailVerified(r.Context(), tok.UserID); err != nil {
-		writeError(w, http.StatusInternalServerError, "no se pudo verificar la cuenta")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo verificar la cuenta")
 		return
 	}
 	_ = h.Tokens.MarkUsed(r.Context(), tok.ID)
 
-	writeJSON(w, http.StatusOK, map[string]bool{"email_verified": true})
+	httpkit.WriteJSON(w, http.StatusOK, map[string]bool{"email_verified": true})
 }
 
 type resendVerificationRequest struct {
@@ -55,7 +56,7 @@ func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request)
 
 	var req resendVerificationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo JSON inválido")
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo JSON inválido")
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
@@ -64,9 +65,9 @@ func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request)
 	if err == nil && !user.EmailVerified {
 		h.sendVerificationEmail(r.Context(), user)
 	} else if err != nil && !errors.Is(err, db.ErrNotFound) {
-		writeError(w, http.StatusInternalServerError, "no se pudo procesar el pedido")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo procesar el pedido")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": genericMessage})
+	httpkit.WriteJSON(w, http.StatusAccepted, map[string]string{"message": genericMessage})
 }

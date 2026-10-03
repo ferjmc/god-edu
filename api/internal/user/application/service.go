@@ -9,7 +9,7 @@ import (
 )
 
 // Service es el punto de entrada del dominio user para el resto de la API
-// (hoy, los handlers en api/handlers). Wrapper delgado para casi todo,
+// (hoy, infrastructure/http). Wrapper delgado para casi todo,
 // excepto UpdateRole (ver abajo).
 type Service struct {
 	repo domain.Repository

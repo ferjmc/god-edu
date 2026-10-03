@@ -10,7 +10,7 @@ import (
 )
 
 // Service es el punto de entrada del dominio course para el resto de la
-// API (hoy, los handlers en api/handlers). Wrapper delgado sobre el
+// API (hoy, infrastructure/http). Wrapper delgado sobre el
 // puerto — la validación de slug (formato, reservados) sigue viviendo en
 // el handler admin, no acá, para no ampliar el alcance de esta migración.
 type Service struct {

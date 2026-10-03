@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"errors"
@@ -8,8 +8,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
-	certdomain "github.com/ferjmc/god-edu/api/internal/certificate/domain"
+	"github.com/ferjmc/god-edu/api/httpkit"
+	"github.com/ferjmc/god-edu/api/internal/certificate/application"
+	"github.com/ferjmc/god-edu/api/internal/certificate/domain"
 )
 
 // CertificateHandler expone la verificación pública de certificados: sin
@@ -18,7 +19,7 @@ import (
 // cuenta en la plataforma (ver newRouter en main.go, fuera de todo grupo
 // con auth.RequireAuth).
 type CertificateHandler struct {
-	Certificates *certapp.Service
+	Certificates *application.Service
 }
 
 type certificateResponse struct {
@@ -36,16 +37,16 @@ func (h *CertificateHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	cert, err := h.Certificates.VerifyByCode(r.Context(), code)
 	if err != nil {
-		if errors.Is(err, certdomain.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "certificado no encontrado")
+		if errors.Is(err, domain.ErrNotFound) {
+			httpkit.WriteError(w, http.StatusNotFound, "certificado no encontrado")
 			return
 		}
 		log.Printf("certificates: verificando código %q: %v", code, err)
-		writeError(w, http.StatusInternalServerError, "no se pudo verificar el certificado")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo verificar el certificado")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, certificateResponse{
+	httpkit.WriteJSON(w, http.StatusOK, certificateResponse{
 		RecipientName: cert.RecipientName,
 		CourseTitle:   cert.CourseTitle,
 		IssuedAt:      cert.IssuedAt,

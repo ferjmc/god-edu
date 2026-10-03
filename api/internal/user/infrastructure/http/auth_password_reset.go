@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"context"
@@ -11,8 +11,9 @@ import (
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
+	"github.com/ferjmc/god-edu/api/httpkit"
 	authtokendomain "github.com/ferjmc/god-edu/api/internal/authtoken/domain"
-	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
+	"github.com/ferjmc/god-edu/api/internal/user/domain"
 )
 
 type forgotPasswordRequest struct {
@@ -27,7 +28,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	var req forgotPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo JSON inválido")
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo JSON inválido")
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
@@ -39,18 +40,18 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, db.ErrNotFound):
 		// No existe: no hacemos nada, pero respondemos igual que si existiera.
 	default:
-		writeError(w, http.StatusInternalServerError, "no se pudo procesar el pedido")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo procesar el pedido")
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": genericMessage})
+	httpkit.WriteJSON(w, http.StatusAccepted, map[string]string{"message": genericMessage})
 }
 
 // sendPasswordResetEmail genera un token de reset y manda el email.
 // Best-effort, igual que sendVerificationEmail: no queremos que un
 // problema con Resend tire un 500 en un endpoint que ya de por sí no debe
 // revelar si el email existe.
-func (h *AuthHandler) sendPasswordResetEmail(ctx context.Context, user userdomain.User) {
+func (h *AuthHandler) sendPasswordResetEmail(ctx context.Context, user domain.User) {
 	raw, hash, err := auth.GenerateToken()
 	if err != nil {
 		log.Printf("auth: generando token de reset para user %d: %v", user.ID, err)
@@ -78,27 +79,27 @@ type resetPasswordRequest struct {
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req resetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
-		writeError(w, http.StatusBadRequest, "token requerido")
+		httpkit.WriteError(w, http.StatusBadRequest, "token requerido")
 		return
 	}
 
 	tok, err := h.Tokens.GetValidByHash(r.Context(), auth.HashToken(req.Token), authtokendomain.TokenPurposePasswordReset)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "el link de restablecimiento es inválido o venció")
+		httpkit.WriteError(w, http.StatusBadRequest, "el link de restablecimiento es inválido o venció")
 		return
 	}
 
 	hash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		httpkit.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.Users.UpdatePasswordHash(r.Context(), tok.UserID, hash); err != nil {
-		writeError(w, http.StatusInternalServerError, "no se pudo actualizar la contraseña")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo actualizar la contraseña")
 		return
 	}
 	_ = h.Tokens.MarkUsed(r.Context(), tok.ID)
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpkit.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

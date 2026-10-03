@@ -19,18 +19,22 @@ import (
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
-	"github.com/ferjmc/god-edu/api/handlers"
+	"github.com/ferjmc/god-edu/api/httpkit"
 	authtokenapp "github.com/ferjmc/god-edu/api/internal/authtoken/application"
 	authtokenpg "github.com/ferjmc/god-edu/api/internal/authtoken/infrastructure/postgres"
 	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
+	certhttp "github.com/ferjmc/god-edu/api/internal/certificate/infrastructure/http"
 	certpg "github.com/ferjmc/god-edu/api/internal/certificate/infrastructure/postgres"
 	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
+	coursehttp "github.com/ferjmc/god-edu/api/internal/course/infrastructure/http"
 	coursepg "github.com/ferjmc/god-edu/api/internal/course/infrastructure/postgres"
 	enrollapp "github.com/ferjmc/god-edu/api/internal/enrollment/application"
 	enrollpg "github.com/ferjmc/god-edu/api/internal/enrollment/infrastructure/postgres"
 	lessonapp "github.com/ferjmc/god-edu/api/internal/lesson/application"
+	lessonhttp "github.com/ferjmc/god-edu/api/internal/lesson/infrastructure/http"
 	lessonpg "github.com/ferjmc/god-edu/api/internal/lesson/infrastructure/postgres"
 	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
+	userhttp "github.com/ferjmc/god-edu/api/internal/user/infrastructure/http"
 	userpg "github.com/ferjmc/god-edu/api/internal/user/infrastructure/postgres"
 	"github.com/ferjmc/god-edu/api/storage"
 )
@@ -72,7 +76,7 @@ func main() {
 	enrollments := enrollapp.NewService(enrollpg.NewRepository(pool))
 	certificates := certapp.NewService(certpg.NewRepository(pool))
 
-	var sender handlers.EmailSender
+	var sender userhttp.EmailSender
 	if cfg.ResendAPIKey != "" {
 		sender = email.NewSender(cfg.ResendAPIKey, cfg.EmailFrom)
 	} else {
@@ -105,25 +109,30 @@ func main() {
 		APIBaseURL:           cfg.APIBaseURL,
 	})
 
-	authHandler := &handlers.AuthHandler{
+	authHandler := &userhttp.AuthHandler{
 		Users:      users,
 		Tokens:     tokens,
 		JWT:        jwtManager,
 		Email:      sender,
 		AppBaseURL: cfg.AppBaseURL,
 	}
-	oauthHandler := &handlers.OAuthHandler{
+	oauthHandler := &userhttp.OAuthHandler{
 		Users:              users,
 		JWT:                jwtManager,
 		SuccessRedirectURL: cfg.AppBaseURL + "/",
 		FailureRedirectURL: cfg.AppBaseURL + "/ingresar?error=oauth",
 	}
-	courseHandler := &handlers.CourseHandler{Courses: courses, Users: users, Enrollments: enrollments, Certificates: certificates}
-	lessonHandler := &handlers.LessonHandler{Courses: courses, Users: users, Lessons: lessons, Certificates: certificates}
-	adminHandler := &handlers.AdminHandler{Users: users, Courses: courses, Lessons: lessons, R2: r2}
-	certificateHandler := &handlers.CertificateHandler{Certificates: certificates}
+	courseHandler := &coursehttp.CourseHandler{Courses: courses, Users: users, Enrollments: enrollments, Certificates: certificates}
+	lessonHandler := &lessonhttp.LessonHandler{Courses: courses, Users: users, Lessons: lessons, Certificates: certificates}
+	// El AdminHandler plano de antes se partió en tres, uno por dominio
+	// (ver CLAUDE.md, "Arquitectura del backend") — cada uno vive en el
+	// infrastructure/http del dominio que administra.
+	courseAdminHandler := &coursehttp.AdminHandler{Courses: courses, Lessons: lessons, R2: r2}
+	lessonAdminHandler := &lessonhttp.AdminHandler{Courses: courses, Lessons: lessons, R2: r2}
+	userAdminHandler := &userhttp.AdminHandler{Users: users}
+	certificateHandler := &certhttp.CertificateHandler{Certificates: certificates}
 
-	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, adminHandler, certificateHandler, users, jwtManager)
+	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, courseAdminHandler, lessonAdminHandler, userAdminHandler, certificateHandler, users, jwtManager)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -144,7 +153,19 @@ func main() {
 // newRouter arma todas las rutas de la API. Las que requieren sesión
 // (auth.RequireAuth) quedan agrupadas aparte para que quede a la vista
 // cuáles son públicas y cuáles no.
-func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *handlers.OAuthHandler, courseHandler *handlers.CourseHandler, lessonHandler *handlers.LessonHandler, adminHandler *handlers.AdminHandler, certificateHandler *handlers.CertificateHandler, users *userapp.Service, jwtManager *auth.JWTManager) http.Handler {
+func newRouter(
+	cfg config,
+	authHandler *userhttp.AuthHandler,
+	oauthHandler *userhttp.OAuthHandler,
+	courseHandler *coursehttp.CourseHandler,
+	lessonHandler *lessonhttp.LessonHandler,
+	courseAdminHandler *coursehttp.AdminHandler,
+	lessonAdminHandler *lessonhttp.AdminHandler,
+	userAdminHandler *userhttp.AdminHandler,
+	certificateHandler *certhttp.CertificateHandler,
+	users *userapp.Service,
+	jwtManager *auth.JWTManager,
+) http.Handler {
 	r := chi.NewRouter()
 	// RealIP primero: sin esto, detrás del proxy de Coolify/Caddy todos los
 	// requests llegan con el mismo r.RemoteAddr (el del proxy), y el rate
@@ -164,11 +185,11 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 		MaxAge:           300,
 	}))
 
-	r.Get("/health", handlers.Health)
+	r.Get("/health", httpkit.Health)
 
 	// Verificación pública de certificados: sin sesión a propósito — quien
 	// escanea un QR o recibe un link de certificado no necesariamente tiene
-	// cuenta en la plataforma (ver handlers.CertificateHandler).
+	// cuenta en la plataforma (ver certhttp.CertificateHandler).
 	r.Get("/certificates/{code}", certificateHandler.Verify)
 
 	r.Route("/courses", func(r chi.Router) {
@@ -186,37 +207,37 @@ func newRouter(cfg config, authHandler *handlers.AuthHandler, oauthHandler *hand
 	})
 
 	// /admin: carga de contenido (cursos, lecciones, video/markdown/PDF).
-	// Detrás de sesión + rol ADMIN — ver handlers.RequireAdmin. No hay
+	// Detrás de sesión + rol ADMIN — ver userhttp.RequireAdmin. No hay
 	// bootstrap automático del primer admin: se promueve a mano con un
 	// UPDATE contra la base (ver README de despliegue).
 	r.Route("/admin/courses", func(r chi.Router) {
 		r.Use(auth.RequireAuth(jwtManager))
-		r.Use(handlers.RequireAdmin(users))
+		r.Use(userhttp.RequireAdmin(users))
 
-		r.Get("/", adminHandler.ListCourses)
-		r.Get("/{slug}", adminHandler.CourseDetail)
-		r.Post("/", adminHandler.CreateCourse)
-		r.Put("/{slug}", adminHandler.UpdateCourseDetails)
-		r.Patch("/{slug}", adminHandler.SetPublished)
-		r.Delete("/{slug}", adminHandler.DeleteCourse)
-		r.Patch("/{slug}/certificate", adminHandler.SetCertificateEnabled)
-		r.Post("/{slug}/lessons", adminHandler.CreateLesson)
-		r.Put("/{slug}/lessons/{order}", adminHandler.UpdateLesson)
-		r.Delete("/{slug}/lessons/{order}", adminHandler.DeleteLesson)
-		r.Post("/{slug}/lessons/{order}/content", adminHandler.CreateContent)
-		r.Post("/{slug}/lessons/{order}/content/pdf", adminHandler.UploadPDFContent)
-		r.Put("/{slug}/lessons/{order}/content/{contentOrder}", adminHandler.UpdateContent)
-		r.Delete("/{slug}/lessons/{order}/content/{contentOrder}", adminHandler.DeleteContent)
+		r.Get("/", courseAdminHandler.ListCourses)
+		r.Get("/{slug}", courseAdminHandler.CourseDetail)
+		r.Post("/", courseAdminHandler.CreateCourse)
+		r.Put("/{slug}", courseAdminHandler.UpdateCourseDetails)
+		r.Patch("/{slug}", courseAdminHandler.SetPublished)
+		r.Delete("/{slug}", courseAdminHandler.DeleteCourse)
+		r.Patch("/{slug}/certificate", courseAdminHandler.SetCertificateEnabled)
+		r.Post("/{slug}/lessons", lessonAdminHandler.CreateLesson)
+		r.Put("/{slug}/lessons/{order}", lessonAdminHandler.UpdateLesson)
+		r.Delete("/{slug}/lessons/{order}", lessonAdminHandler.DeleteLesson)
+		r.Post("/{slug}/lessons/{order}/content", lessonAdminHandler.CreateContent)
+		r.Post("/{slug}/lessons/{order}/content/pdf", lessonAdminHandler.UploadPDFContent)
+		r.Put("/{slug}/lessons/{order}/content/{contentOrder}", lessonAdminHandler.UpdateContent)
+		r.Delete("/{slug}/lessons/{order}/content/{contentOrder}", lessonAdminHandler.DeleteContent)
 	})
 
 	// /admin: consulta de usuarios.
-	// Detrás de sesión + rol ADMIN — ver handlers.RequireAdmin.
+	// Detrás de sesión + rol ADMIN — ver userhttp.RequireAdmin.
 	r.Route("/admin/users", func(r chi.Router) {
 		r.Use(auth.RequireAuth(jwtManager))
-		r.Use(handlers.RequireAdmin(users))
+		r.Use(userhttp.RequireAdmin(users))
 
-		r.Get("/", adminHandler.ListUsers)
-		r.Patch("/{id}", adminHandler.UpdateUserRole)
+		r.Get("/", userAdminHandler.ListUsers)
+		r.Patch("/{id}", userAdminHandler.UpdateUserRole)
 	})
 
 	r.Route("/auth", func(r chi.Router) {

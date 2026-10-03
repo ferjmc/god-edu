@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"context"
@@ -12,13 +12,13 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
-	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
-	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
+	"github.com/ferjmc/god-edu/api/internal/user/application"
+	"github.com/ferjmc/god-edu/api/internal/user/domain"
 )
 
 // OAuthHandler agrupa el flujo de login con Google/Facebook vía goth.
 type OAuthHandler struct {
-	Users *userapp.Service
+	Users *application.Service
 	JWT   *auth.JWTManager
 	// SuccessRedirectURL y FailureRedirectURL son páginas del frontend
 	// (home y /ingresar, ver main.go) a las que se redirige después del
@@ -77,21 +77,21 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 // crea uno nuevo con email_verified = true (el provider ya lo verificó).
 // Si existe pero todavía no estaba verificado, "reclama" la cuenta — ver
 // el comentario de userpg.Repository.ClaimByOAuth.
-func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider string, gu goth.User) (userdomain.User, error) {
+func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider string, gu goth.User) (domain.User, error) {
 	existing, err := h.Users.GetByEmail(ctx, gu.Email)
 	if err == nil {
 		if !existing.EmailVerified {
-			if err := h.Users.ClaimByOAuth(ctx, existing.ID, userdomain.AuthProvider(provider)); err != nil {
-				return userdomain.User{}, err
+			if err := h.Users.ClaimByOAuth(ctx, existing.ID, domain.AuthProvider(provider)); err != nil {
+				return domain.User{}, err
 			}
 			existing.EmailVerified = true
 			existing.PasswordHash = nil
-			existing.AuthProvider = userdomain.AuthProvider(provider)
+			existing.AuthProvider = domain.AuthProvider(provider)
 		}
 		return existing, nil
 	}
 	if !errors.Is(err, db.ErrNotFound) {
-		return userdomain.User{}, err
+		return domain.User{}, err
 	}
 
 	name := gu.Name
@@ -102,11 +102,11 @@ func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider strin
 		name = gu.Email
 	}
 
-	return h.Users.Create(ctx, userdomain.User{
+	return h.Users.Create(ctx, domain.User{
 		Email:         gu.Email,
 		Name:          name,
-		AuthProvider:  userdomain.AuthProvider(provider),
+		AuthProvider:  domain.AuthProvider(provider),
 		EmailVerified: true,
-		Role:          userdomain.RolePublicMember,
+		Role:          domain.RolePublicMember,
 	})
 }

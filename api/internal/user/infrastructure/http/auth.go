@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"context"
@@ -11,10 +11,11 @@ import (
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/email"
+	"github.com/ferjmc/god-edu/api/httpkit"
 	authtokenapp "github.com/ferjmc/god-edu/api/internal/authtoken/application"
 	authtokendomain "github.com/ferjmc/god-edu/api/internal/authtoken/domain"
-	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
-	userdomain "github.com/ferjmc/god-edu/api/internal/user/domain"
+	"github.com/ferjmc/god-edu/api/internal/user/application"
+	"github.com/ferjmc/god-edu/api/internal/user/domain"
 )
 
 // EmailSender es lo mínimo que AuthHandler necesita para mandar correo.
@@ -25,10 +26,14 @@ type EmailSender interface {
 }
 
 // AuthHandler agrupa los endpoints de autenticación por email/password,
-// verificación de cuenta y reset de password. Se instancia una sola vez en
-// main.go con sus dependencias reales.
+// verificación de cuenta y reset de password, además del login social (ver
+// oauth.go). Dependen parejo de User y AuthToken — viven acá porque login/
+// registro/verificación son, en el fondo, operaciones sobre la identidad
+// de un User; AuthToken queda como servicio de apoyo (mismo patrón que
+// course/http.CourseHandler usando enrollment/certificate como apoyo). Se
+// instancia una sola vez en main.go con sus dependencias reales.
 type AuthHandler struct {
-	Users  *userapp.Service
+	Users  *application.Service
 	Tokens *authtokenapp.Service
 	JWT    *auth.JWTManager
 	Email  EmailSender
@@ -50,7 +55,7 @@ type loginRequest struct {
 }
 
 // userResponse es la representación pública de un usuario: nunca incluye
-// password_hash, aunque se agreguen campos a userdomain.User más adelante.
+// password_hash, aunque se agreguen campos a domain.User más adelante.
 type userResponse struct {
 	ID            int64  `json:"id"`
 	Email         string `json:"email"`
@@ -60,7 +65,7 @@ type userResponse struct {
 	Role          string `json:"role"`
 }
 
-func toUserResponse(u userdomain.User) userResponse {
+func toUserResponse(u domain.User) userResponse {
 	return userResponse{
 		ID:            u.ID,
 		Email:         u.Email,
@@ -79,7 +84,7 @@ func toUserResponse(u userdomain.User) userResponse {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo JSON inválido")
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo JSON inválido")
 		return
 	}
 
@@ -87,39 +92,39 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 
 	if req.Email == "" || !strings.Contains(req.Email, "@") {
-		writeError(w, http.StatusBadRequest, "email inválido")
+		httpkit.WriteError(w, http.StatusBadRequest, "email inválido")
 		return
 	}
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "el nombre es requerido")
+		httpkit.WriteError(w, http.StatusBadRequest, "el nombre es requerido")
 		return
 	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		httpkit.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	created, err := h.Users.Create(r.Context(), userdomain.User{
+	created, err := h.Users.Create(r.Context(), domain.User{
 		Email:        req.Email,
 		PasswordHash: &hash,
 		Name:         req.Name,
-		AuthProvider: userdomain.AuthProviderEmail,
-		Role:         userdomain.RolePublicMember,
+		AuthProvider: domain.AuthProviderEmail,
+		Role:         domain.RolePublicMember,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
-			writeError(w, http.StatusConflict, "ese email ya está registrado")
+			httpkit.WriteError(w, http.StatusConflict, "ese email ya está registrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "no se pudo crear la cuenta")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo crear la cuenta")
 		return
 	}
 
 	token, err := h.JWT.Issue(created.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "no se pudo iniciar sesión")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo iniciar sesión")
 		return
 	}
 	auth.SetSessionCookie(w, token)
@@ -128,12 +133,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// completo. El usuario puede pedir que le reenvíen el link.
 	h.sendVerificationEmail(r.Context(), created)
 
-	writeJSON(w, http.StatusCreated, toUserResponse(created))
+	httpkit.WriteJSON(w, http.StatusCreated, toUserResponse(created))
 }
 
 // sendVerificationEmail genera un token de verificación y manda el email.
 // No devuelve error a propósito (ver comentario en Register); solo loguea.
-func (h *AuthHandler) sendVerificationEmail(ctx context.Context, user userdomain.User) {
+func (h *AuthHandler) sendVerificationEmail(ctx context.Context, user domain.User) {
 	raw, hash, err := auth.GenerateToken()
 	if err != nil {
 		log.Printf("auth: generando token de verificación para user %d: %v", user.ID, err)
@@ -162,30 +167,30 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo JSON inválido")
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo JSON inválido")
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 
 	user, err := h.Users.GetByEmail(r.Context(), req.Email)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, genericError)
+		httpkit.WriteError(w, http.StatusUnauthorized, genericError)
 		return
 	}
 
 	if user.PasswordHash == nil || !auth.CheckPassword(*user.PasswordHash, req.Password) {
-		writeError(w, http.StatusUnauthorized, genericError)
+		httpkit.WriteError(w, http.StatusUnauthorized, genericError)
 		return
 	}
 
 	token, err := h.JWT.Issue(user.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "no se pudo iniciar sesión")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo iniciar sesión")
 		return
 	}
 	auth.SetSessionCookie(w, token)
 
-	writeJSON(w, http.StatusOK, toUserResponse(user))
+	httpkit.WriteJSON(w, http.StatusOK, toUserResponse(user))
 }
 
 // Logout borra la cookie de sesión. No requiere estar autenticado: si no
@@ -200,16 +205,16 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.UserIDFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "no autenticado")
+		httpkit.WriteError(w, http.StatusUnauthorized, "no autenticado")
 		return
 	}
 
 	user, err := h.Users.GetByID(r.Context(), userID)
 	if err != nil {
 		// El JWT es válido pero el usuario ya no existe (cuenta borrada).
-		writeError(w, http.StatusUnauthorized, "no autenticado")
+		httpkit.WriteError(w, http.StatusUnauthorized, "no autenticado")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toUserResponse(user))
+	httpkit.WriteJSON(w, http.StatusOK, toUserResponse(user))
 }

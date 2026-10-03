@@ -1,4 +1,4 @@
-package handlers
+package http
 
 import (
 	"errors"
@@ -10,9 +10,10 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
+	"github.com/ferjmc/god-edu/api/httpkit"
 	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
-	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
-	coursedomain "github.com/ferjmc/god-edu/api/internal/course/domain"
+	"github.com/ferjmc/god-edu/api/internal/course/application"
+	"github.com/ferjmc/god-edu/api/internal/course/domain"
 	enrollapp "github.com/ferjmc/god-edu/api/internal/enrollment/application"
 	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
 )
@@ -20,7 +21,7 @@ import (
 // CourseHandler agrupa los endpoints de cursos: List es público, el resto
 // requiere sesión (ver newRouter en main.go).
 type CourseHandler struct {
-	Courses      *courseapp.Service
+	Courses      *application.Service
 	Users        *userapp.Service
 	Enrollments  *enrollapp.Service
 	Certificates *certapp.Service
@@ -28,7 +29,7 @@ type CourseHandler struct {
 
 // courseResponse es la representación pública de un curso. Solo lleva lo
 // que necesita una tarjeta de listado o el detalle; el listado de lecciones
-// se resuelve en un endpoint aparte (ver LessonHandler).
+// se resuelve en un endpoint aparte (ver lesson/infrastructure/http.LessonHandler).
 type courseResponse struct {
 	ID                 int64   `json:"id"`
 	Title              string  `json:"title"`
@@ -37,14 +38,14 @@ type courseResponse struct {
 	CertificateEnabled bool    `json:"certificateEnabled"`
 	// Enrolled indica si el usuario autenticado ya se inscribió en este
 	// curso (ver POST .../enroll). No afecta si puede ver esta respuesta —
-	// eso lo decide el rol (ver resolveVisibleCourse) — solo si el frontend
+	// eso lo decide el rol (ver ResolveVisibleCourse) — solo si el frontend
 	// debe mostrar el panel completo de lecciones o la pantalla de resumen
 	// con el botón "Inscribirme". No va en List: ahí no hay un usuario en
 	// particular para el que resolverlo sin una consulta por curso.
 	Enrolled bool `json:"enrolled"`
 }
 
-func toCourseResponse(c coursedomain.Course, enrolled bool) courseResponse {
+func toCourseResponse(c domain.Course, enrolled bool) courseResponse {
 	return courseResponse{
 		ID:                 c.ID,
 		Title:              c.Title,
@@ -62,7 +63,7 @@ func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
 	courses, err := h.Courses.ListPublished(r.Context())
 	if err != nil {
 		log.Printf("courses: listando publicados: %v", err)
-		writeError(w, http.StatusInternalServerError, "no se pudieron obtener los cursos")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener los cursos")
 		return
 	}
 
@@ -74,23 +75,23 @@ func (h *CourseHandler) List(w http.ResponseWriter, r *http.Request) {
 		response[i] = toCourseResponse(c, false)
 	}
 
-	writeJSON(w, http.StatusOK, response)
+	httpkit.WriteJSON(w, http.StatusOK, response)
 }
 
 // Detail devuelve un curso por slug. Requiere sesión: un usuario anónimo no
 // debe poder ver el contenido de un curso, solo su ficha en el listado.
 // Además, si el curso restringe roles (course.VisibleRoles), el usuario
 // logueado tiene que tener uno de esos roles — devuelve 403 si no (ver
-// resolveVisibleCourse, que comparte con LessonHandler). No inscribe
+// ResolveVisibleCourse, que comparte con LessonHandler). No inscribe
 // automáticamente: la inscripción es una acción explícita del alumno (ver
 // Enroll) — el frontend usa el campo Enrolled de la respuesta para decidir
 // si mostrar el resumen con el botón "Inscribirme" o el panel completo.
 func (h *CourseHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
-	course, err := resolveVisibleCourse(r.Context(), h.Courses, h.Users, slug)
+	course, err := ResolveVisibleCourse(r.Context(), h.Courses, h.Users, slug)
 	if err != nil {
-		writeCourseAccessError(w, err)
+		WriteCourseAccessError(w, err)
 		return
 	}
 
@@ -98,15 +99,15 @@ func (h *CourseHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	enrolled, err := h.Enrollments.IsEnrolled(r.Context(), userID, course.ID)
 	if err != nil {
 		log.Printf("courses: consultando inscripción (usuario %d, curso %d): %v", userID, course.ID, err)
-		writeError(w, http.StatusInternalServerError, "no se pudo obtener el curso")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo obtener el curso")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toCourseResponse(course, enrolled))
+	httpkit.WriteJSON(w, http.StatusOK, toCourseResponse(course, enrolled))
 }
 
 // Enroll inscribe al usuario autenticado en el curso. Vuelve a correr el
-// mismo chequeo de acceso por rol que Detail (resolveVisibleCourse) — nunca
+// mismo chequeo de acceso por rol que Detail (ResolveVisibleCourse) — nunca
 // hay que confiar en que el botón "Inscribirme" del frontend fue el único
 // gate. Idempotente: llamarlo dos veces no crea una segunda inscripción
 // (ver enrollment/infrastructure/postgres.Repository.Enroll). No cambia
@@ -115,20 +116,20 @@ func (h *CourseHandler) Detail(w http.ResponseWriter, r *http.Request) {
 func (h *CourseHandler) Enroll(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 
-	course, err := resolveVisibleCourse(r.Context(), h.Courses, h.Users, slug)
+	course, err := ResolveVisibleCourse(r.Context(), h.Courses, h.Users, slug)
 	if err != nil {
-		writeCourseAccessError(w, err)
+		WriteCourseAccessError(w, err)
 		return
 	}
 
 	userID, _ := auth.UserIDFromContext(r.Context())
 	if err := h.Enrollments.Enroll(r.Context(), userID, course.ID); err != nil {
 		log.Printf("courses: inscribiendo usuario %d en curso %d: %v", userID, course.ID, err)
-		writeError(w, http.StatusInternalServerError, "no se pudo completar la inscripción")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo completar la inscripción")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toCourseResponse(course, true))
+	httpkit.WriteJSON(w, http.StatusOK, toCourseResponse(course, true))
 }
 
 type courseProgressResponse struct {
@@ -152,7 +153,7 @@ type courseProgressResponse struct {
 	CertificateCode *string    `json:"certificateCode,omitempty"`
 }
 
-func toCourseProgressResponse(c coursedomain.CourseProgress) courseProgressResponse {
+func toCourseProgressResponse(c domain.CourseProgress) courseProgressResponse {
 	percent := 0
 	if c.TotalLessons > 0 {
 		percent = int(float64(c.CompletedLessons) / float64(c.TotalLessons) * 100)
@@ -180,31 +181,31 @@ func (h *CourseHandler) Mine(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, db.ErrNotFound) {
 			// El JWT es válido pero el usuario ya no existe (cuenta borrada
 			// después de emitido el token) — la sesión quedó huérfana.
-			writeError(w, http.StatusUnauthorized, "sesión inválida")
+			httpkit.WriteError(w, http.StatusUnauthorized, "sesión inválida")
 			return
 		}
 		log.Printf("courses: buscando usuario %d: %v", userID, err)
-		writeError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
 		return
 	}
 
 	courses, err := h.Courses.ListVisibleWithProgress(r.Context(), userID, user.Role)
 	if err != nil {
 		log.Printf("courses: listando cursos con progreso del usuario %d: %v", userID, err)
-		writeError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
 		return
 	}
 
 	enrolledAt, err := h.Enrollments.EnrolledAtByUser(r.Context(), userID)
 	if err != nil {
 		log.Printf("courses: obteniendo inscripciones del usuario %d: %v", userID, err)
-		writeError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
 		return
 	}
 	certCodes, err := h.Certificates.CodesByUser(r.Context(), userID)
 	if err != nil {
 		log.Printf("courses: obteniendo certificados del usuario %d: %v", userID, err)
-		writeError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener tus cursos")
 		return
 	}
 
@@ -219,5 +220,5 @@ func (h *CourseHandler) Mine(w http.ResponseWriter, r *http.Request) {
 		}
 		response[i] = cr
 	}
-	writeJSON(w, http.StatusOK, response)
+	httpkit.WriteJSON(w, http.StatusOK, response)
 }

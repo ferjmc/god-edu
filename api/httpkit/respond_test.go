@@ -1,4 +1,4 @@
-package handlers
+package httpkit
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 
 func TestRequireNonEmpty(t *testing.T) {
 	w := httptest.NewRecorder()
-	if _, ok := requireNonEmpty(w, "   ", "título"); ok {
+	if _, ok := RequireNonEmpty(w, "   ", "título"); ok {
 		t.Fatal("esperaba ok=false para un valor vacío")
 	}
 	if w.Code != 400 {
@@ -18,7 +18,7 @@ func TestRequireNonEmpty(t *testing.T) {
 	}
 
 	w2 := httptest.NewRecorder()
-	value, ok := requireNonEmpty(w2, "  hola  ", "título")
+	value, ok := RequireNonEmpty(w2, "  hola  ", "título")
 	if !ok || value != "hola" {
 		t.Fatalf("esperaba ok=true y value recortado, recibí ok=%v value=%q", ok, value)
 	}
@@ -26,7 +26,7 @@ func TestRequireNonEmpty(t *testing.T) {
 
 func TestHandleNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
-	if !handleNotFound(w, db.ErrNotFound, "no encontrado") {
+	if !HandleNotFound(w, db.ErrNotFound, "no encontrado") {
 		t.Fatal("esperaba true para db.ErrNotFound")
 	}
 	if w.Code != 404 {
@@ -34,7 +34,7 @@ func TestHandleNotFound(t *testing.T) {
 	}
 
 	w2 := httptest.NewRecorder()
-	if handleNotFound(w2, errors.New("otro error"), "no encontrado") {
+	if HandleNotFound(w2, errors.New("otro error"), "no encontrado") {
 		t.Fatal("esperaba false para un error que no es db.ErrNotFound")
 	}
 	if w2.Code != 200 {

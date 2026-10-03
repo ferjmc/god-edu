@@ -9,7 +9,7 @@ import (
 
 // Enrollment registra que un usuario tomó un curso, y desde cuándo. No
 // gatea acceso al contenido — el acceso sigue siendo por rol (ver
-// handlers.resolveVisibleCourse). Es tracking, y la base para poder sumar
+// coursehttp.ResolveVisibleCourse). Es tracking, y la base para poder sumar
 // precio/pasarela de pago en una etapa futura.
 type Enrollment struct {
 	UserID     int64

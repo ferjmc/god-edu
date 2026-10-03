@@ -27,9 +27,9 @@ const uniqueViolation = "23505"
 // separado: el contenido de una lección no tiene sentido sin la lección, y
 // viceversa. Los errores "no encontrado"/"ya existe" siguen siendo
 // db.ErrNotFound y db.ErrConflict (no sentinels propios): son vocabulario
-// compartido que ya usan handlers/respond.go (handleNotFound) y el resto de
-// los handlers vía errors.Is — mantenerlos evita tocar esa capa solo por
-// moverse de paquete.
+// compartido que ya usan httpkit.HandleNotFound y el resto de los handlers
+// vía errors.Is — mantenerlos evita tocar esa capa solo por moverse de
+// paquete.
 type Repository struct {
 	pool *pgxpool.Pool
 }
