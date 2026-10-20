@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/internal/user/domain"
@@ -46,6 +47,9 @@ func (f *fakeRepo) UpdatePasswordHash(ctx context.Context, id int64, passwordHas
 	return nil
 }
 func (f *fakeRepo) ClaimByOAuth(ctx context.Context, id int64, provider domain.AuthProvider) error {
+	return nil
+}
+func (f *fakeRepo) UpdateBirthDate(ctx context.Context, id int64, birthDate time.Time) error {
 	return nil
 }
 

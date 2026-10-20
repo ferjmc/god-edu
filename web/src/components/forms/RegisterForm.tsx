@@ -7,6 +7,7 @@ export default function RegisterForm() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
+	const [birthDate, setBirthDate] = useState("");
 	const [acceptedTerms, setAcceptedTerms] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
@@ -20,7 +21,7 @@ export default function RegisterForm() {
 		setError(null);
 		setSubmitting(true);
 		try {
-			await register({ name, email, password });
+			await register({ name, email, password, accepted_terms: acceptedTerms, birth_date: birthDate });
 			window.location.assign("/mis-cursos?welcome=1");
 		} catch (err) {
 			setError(err instanceof ApiError ? err.message : "No se pudo crear la cuenta. Intentá de nuevo.");
@@ -69,6 +70,17 @@ export default function RegisterForm() {
 					minLength={8}
 					value={confirmPassword}
 					onChange={(e) => setConfirmPassword(e.target.value)}
+					className="input input-bordered w-full"
+				/>
+			</label>
+
+			<label className="flex flex-col gap-1">
+				<span className="font-ui text-sm text-ink-80">Fecha de nacimiento</span>
+				<input
+					type="date"
+					required
+					value={birthDate}
+					onChange={(e) => setBirthDate(e.target.value)}
 					className="input input-bordered w-full"
 				/>
 			</label>

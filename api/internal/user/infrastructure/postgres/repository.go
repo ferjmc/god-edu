@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -40,7 +41,7 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 // activarlos.
 func (r *Repository) ListAll(ctx context.Context) ([]domain.User, error) {
 	const q = `
-		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at
+		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at, terms_accepted_at, birth_date, signup_ip
 		FROM users
 		ORDER BY created_at DESC
 	`
@@ -53,7 +54,7 @@ func (r *Repository) ListAll(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	for rows.Next() {
 		var u domain.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.AuthProvider, &u.EmailVerified, &u.Role, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.AuthProvider, &u.EmailVerified, &u.Role, &u.CreatedAt, &u.TermsAcceptedAt, &u.BirthDate, &u.SignupIP); err != nil {
 			return nil, fmt.Errorf("user: leyendo usuario: %w", err)
 		}
 		users = append(users, u)
@@ -69,12 +70,12 @@ func (r *Repository) ListAll(ctx context.Context) ([]domain.User, error) {
 // completados por la base.
 func (r *Repository) Create(ctx context.Context, u domain.User) (domain.User, error) {
 	const q = `
-		INSERT INTO users (email, password_hash, name, auth_provider, email_verified, role)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO users (email, password_hash, name, auth_provider, email_verified, role, terms_accepted_at, birth_date, signup_ip)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at
 	`
 
-	err := r.pool.QueryRow(ctx, q, u.Email, u.PasswordHash, u.Name, u.AuthProvider, u.EmailVerified, u.Role).
+	err := r.pool.QueryRow(ctx, q, u.Email, u.PasswordHash, u.Name, u.AuthProvider, u.EmailVerified, u.Role, u.TermsAcceptedAt, u.BirthDate, u.SignupIP).
 		Scan(&u.ID, &u.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -91,7 +92,7 @@ func (r *Repository) Create(ctx context.Context, u domain.User) (domain.User, er
 // existe.
 func (r *Repository) GetByEmail(ctx context.Context, email string) (domain.User, error) {
 	const q = `
-		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at
+		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at, terms_accepted_at, birth_date, signup_ip
 		FROM users
 		WHERE email = $1
 	`
@@ -101,7 +102,7 @@ func (r *Repository) GetByEmail(ctx context.Context, email string) (domain.User,
 // GetByID busca un usuario por id. Devuelve db.ErrNotFound si no existe.
 func (r *Repository) GetByID(ctx context.Context, id int64) (domain.User, error) {
 	const q = `
-		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at
+		SELECT id, email, password_hash, name, auth_provider, email_verified, role, created_at, terms_accepted_at, birth_date, signup_ip
 		FROM users
 		WHERE id = $1
 	`
@@ -176,6 +177,20 @@ func (r *Repository) UpdateRole(ctx context.Context, id int64, role domain.UserR
 	return nil
 }
 
+// UpdateBirthDate guarda la fecha de nacimiento de un usuario que no la
+// tenía todavía. Tan simple como UpdateRole.
+func (r *Repository) UpdateBirthDate(ctx context.Context, id int64, birthDate time.Time) error {
+	const q = `UPDATE users SET birth_date = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, birthDate, id)
+	if err != nil {
+		return fmt.Errorf("user: actualizando fecha de nacimiento de usuario %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
 // CountAdmins devuelve cuántos usuarios tienen hoy el rol ADMIN. La usa
 // application.Service.UpdateRole para no dejar la plataforma sin ningún
 // admin — antes era una query inline dentro del UpdateRole de db/users.go,
@@ -192,7 +207,7 @@ func (r *Repository) CountAdmins(ctx context.Context) (int, error) {
 
 func (r *Repository) scanOne(row pgx.Row) (domain.User, error) {
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.AuthProvider, &u.EmailVerified, &u.Role, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.AuthProvider, &u.EmailVerified, &u.Role, &u.CreatedAt, &u.TermsAcceptedAt, &u.BirthDate, &u.SignupIP)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.User{}, db.ErrNotFound

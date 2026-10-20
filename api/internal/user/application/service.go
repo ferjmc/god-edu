@@ -4,6 +4,7 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/ferjmc/god-edu/api/internal/user/domain"
 )
@@ -45,6 +46,10 @@ func (s *Service) UpdatePasswordHash(ctx context.Context, id int64, passwordHash
 
 func (s *Service) ClaimByOAuth(ctx context.Context, id int64, provider domain.AuthProvider) error {
 	return s.repo.ClaimByOAuth(ctx, id, provider)
+}
+
+func (s *Service) UpdateBirthDate(ctx context.Context, id int64, birthDate time.Time) error {
+	return s.repo.UpdateBirthDate(ctx, id, birthDate)
 }
 
 // UpdateRole cambia el rol de un usuario, con las dos protecciones que

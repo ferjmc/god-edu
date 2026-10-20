@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/markbates/goth"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
+	"github.com/ferjmc/god-edu/api/httpkit"
 	"github.com/ferjmc/god-edu/api/internal/user/application"
 	"github.com/ferjmc/god-edu/api/internal/user/domain"
 )
@@ -26,6 +28,10 @@ type OAuthHandler struct {
 	// fallado.
 	SuccessRedirectURL string
 	FailureRedirectURL string
+	// CompleteProfileRedirectURL es la página del frontend que pide la
+	// fecha de nacimiento cuando falta — alta social nueva, o cuenta OAuth
+	// vieja que quedó sin este dato (ver Callback).
+	CompleteProfileRedirectURL string
 }
 
 // BeginAuth arranca el flujo OAuth: redirige al usuario al provider
@@ -55,7 +61,7 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.findOrCreateOAuthUser(r.Context(), provider, gothUser)
+	user, err := h.findOrCreateOAuthUser(r.Context(), r, provider, gothUser)
 	if err != nil {
 		log.Printf("oauth: creando/recuperando usuario: %v", err)
 		http.Redirect(w, r, h.FailureRedirectURL, http.StatusTemporaryRedirect)
@@ -70,6 +76,15 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	auth.SetSessionCookie(w, token)
 
+	// Alta social nueva, o cuenta OAuth vieja de antes de este campo: en
+	// vez de mandarlo directo al home, pasa primero por completar perfil a
+	// pedir la fecha de nacimiento. La cookie de sesión ya está seteada, así
+	// que esa pantalla arranca autenticada.
+	if user.BirthDate == nil {
+		http.Redirect(w, r, h.CompleteProfileRedirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
 	http.Redirect(w, r, h.SuccessRedirectURL, http.StatusTemporaryRedirect)
 }
 
@@ -77,7 +92,15 @@ func (h *OAuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 // crea uno nuevo con email_verified = true (el provider ya lo verificó).
 // Si existe pero todavía no estaba verificado, "reclama" la cuenta — ver
 // el comentario de userpg.Repository.ClaimByOAuth.
-func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider string, gu goth.User) (domain.User, error) {
+//
+// Para una cuenta nueva, se estampa TermsAcceptedAt: el botón de login
+// social siempre muestra, al lado, el texto fijo de aceptación de
+// Términos/Privacidad (ver OAuthButtons en el frontend) — no hace falta
+// transportar un checkbox a través del redirect del proveedor, el solo
+// hecho de llegar hasta acá ya implica esa aceptación. BirthDate no se
+// completa en esta función — no hay de dónde sacarla; Callback redirige a
+// completar perfil cuando falta.
+func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, r *http.Request, provider string, gu goth.User) (domain.User, error) {
 	existing, err := h.Users.GetByEmail(ctx, gu.Email)
 	if err == nil {
 		if !existing.EmailVerified {
@@ -102,11 +125,15 @@ func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, provider strin
 		name = gu.Email
 	}
 
+	termsAcceptedAt := time.Now()
+	ip := httpkit.ClientIP(r)
 	return h.Users.Create(ctx, domain.User{
-		Email:         gu.Email,
-		Name:          name,
-		AuthProvider:  domain.AuthProvider(provider),
-		EmailVerified: true,
-		Role:          domain.RolePublicMember,
+		Email:           gu.Email,
+		Name:            name,
+		AuthProvider:    domain.AuthProvider(provider),
+		EmailVerified:   true,
+		Role:            domain.RolePublicMember,
+		TermsAcceptedAt: &termsAcceptedAt,
+		SignupIP:        &ip,
 	})
 }

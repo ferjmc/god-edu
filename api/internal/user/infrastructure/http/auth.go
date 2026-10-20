@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ferjmc/god-edu/api/auth"
 	"github.com/ferjmc/god-edu/api/db"
@@ -44,10 +45,22 @@ type AuthHandler struct {
 }
 
 type registerRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	Email         string `json:"email"`
+	Password      string `json:"password"`
+	Name          string `json:"name"`
+	AcceptedTerms bool   `json:"accepted_terms"`
+	BirthDate     string `json:"birth_date"` // "YYYY-MM-DD"
 }
+
+type updateBirthDateRequest struct {
+	BirthDate string `json:"birth_date"` // "YYYY-MM-DD"
+}
+
+// birthDateLayout es el formato de fecha que mandan tanto el registro por
+// email/password como la pantalla de completar perfil (ver
+// completar-perfil en el frontend) — un <input type="date"> HTML siempre
+// manda este formato.
+const birthDateLayout = "2006-01-02"
 
 type loginRequest struct {
 	Email    string `json:"email"`
@@ -57,22 +70,24 @@ type loginRequest struct {
 // userResponse es la representación pública de un usuario: nunca incluye
 // password_hash, aunque se agreguen campos a domain.User más adelante.
 type userResponse struct {
-	ID            int64  `json:"id"`
-	Email         string `json:"email"`
-	Name          string `json:"name"`
-	AuthProvider  string `json:"auth_provider"`
-	EmailVerified bool   `json:"email_verified"`
-	Role          string `json:"role"`
+	ID             int64  `json:"id"`
+	Email          string `json:"email"`
+	Name           string `json:"name"`
+	AuthProvider   string `json:"auth_provider"`
+	EmailVerified  bool   `json:"email_verified"`
+	Role           string `json:"role"`
+	NeedsBirthDate bool   `json:"needs_birth_date"`
 }
 
 func toUserResponse(u domain.User) userResponse {
 	return userResponse{
-		ID:            u.ID,
-		Email:         u.Email,
-		Name:          u.Name,
-		AuthProvider:  string(u.AuthProvider),
-		EmailVerified: u.EmailVerified,
-		Role:          string(u.Role),
+		ID:             u.ID,
+		Email:          u.Email,
+		Name:           u.Name,
+		AuthProvider:   string(u.AuthProvider),
+		EmailVerified:  u.EmailVerified,
+		Role:           string(u.Role),
+		NeedsBirthDate: u.BirthDate == nil,
 	}
 }
 
@@ -99,6 +114,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		httpkit.WriteError(w, http.StatusBadRequest, "el nombre es requerido")
 		return
 	}
+	if !req.AcceptedTerms {
+		httpkit.WriteError(w, http.StatusBadRequest, "hay que aceptar los Términos de uso y la Política de privacidad")
+		return
+	}
+	birthDate, err := time.Parse(birthDateLayout, strings.TrimSpace(req.BirthDate))
+	if err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "fecha de nacimiento inválida")
+		return
+	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -106,12 +130,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	termsAcceptedAt := time.Now()
+	ip := httpkit.ClientIP(r)
 	created, err := h.Users.Create(r.Context(), domain.User{
-		Email:        req.Email,
-		PasswordHash: &hash,
-		Name:         req.Name,
-		AuthProvider: domain.AuthProviderEmail,
-		Role:         domain.RolePublicMember,
+		Email:           req.Email,
+		PasswordHash:    &hash,
+		Name:            req.Name,
+		AuthProvider:    domain.AuthProviderEmail,
+		Role:            domain.RolePublicMember,
+		TermsAcceptedAt: &termsAcceptedAt,
+		BirthDate:       &birthDate,
+		SignupIP:        &ip,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
@@ -191,6 +220,40 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	auth.SetSessionCookie(w, token)
 
 	httpkit.WriteJSON(w, http.StatusOK, toUserResponse(user))
+}
+
+// UpdateBirthDate guarda la fecha de nacimiento del usuario autenticado
+// cuando todavía no la tiene — la usa la pantalla de completar perfil, a la
+// que redirige oauth.Callback tanto para altas sociales nuevas como para
+// cuentas OAuth viejas que quedaron sin este dato (ver oauth.go).
+func (h *AuthHandler) UpdateBirthDate(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.UserIDFromContext(r.Context())
+	if !ok {
+		httpkit.WriteError(w, http.StatusUnauthorized, "no autenticado")
+		return
+	}
+
+	var req updateBirthDateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo JSON inválido")
+		return
+	}
+
+	birthDate, err := time.Parse(birthDateLayout, strings.TrimSpace(req.BirthDate))
+	if err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "fecha de nacimiento inválida")
+		return
+	}
+
+	if err := h.Users.UpdateBirthDate(r.Context(), userID, birthDate); err != nil {
+		if httpkit.HandleNotFound(w, err, "no autenticado") {
+			return
+		}
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo guardar la fecha de nacimiento")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Logout borra la cookie de sesión. No requiere estar autenticado: si no

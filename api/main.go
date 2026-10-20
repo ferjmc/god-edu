@@ -117,10 +117,11 @@ func main() {
 		AppBaseURL: cfg.AppBaseURL,
 	}
 	oauthHandler := &userhttp.OAuthHandler{
-		Users:              users,
-		JWT:                jwtManager,
-		SuccessRedirectURL: cfg.AppBaseURL + "/",
-		FailureRedirectURL: cfg.AppBaseURL + "/ingresar?error=oauth",
+		Users:                      users,
+		JWT:                        jwtManager,
+		SuccessRedirectURL:         cfg.AppBaseURL + "/",
+		FailureRedirectURL:         cfg.AppBaseURL + "/ingresar?error=oauth",
+		CompleteProfileRedirectURL: cfg.AppBaseURL + "/completar-perfil",
 	}
 	courseHandler := &coursehttp.CourseHandler{Courses: courses, Users: users, Enrollments: enrollments, Certificates: certificates}
 	lessonHandler := &lessonhttp.LessonHandler{Courses: courses, Users: users, Lessons: lessons, Certificates: certificates}
@@ -263,6 +264,7 @@ func newRouter(
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth(jwtManager))
 			r.Get("/me", authHandler.Me)
+			r.Patch("/birth-date", authHandler.UpdateBirthDate)
 		})
 	})
 

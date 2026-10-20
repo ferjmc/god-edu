@@ -49,7 +49,13 @@ export async function login(input: { email: string; password: string }): Promise
 	return user;
 }
 
-export async function register(input: { email: string; password: string; name: string }): Promise<User> {
+export async function register(input: {
+	email: string;
+	password: string;
+	name: string;
+	accepted_terms: boolean;
+	birth_date: string;
+}): Promise<User> {
 	const user = await authApi.register(input);
 	$auth.set({ status: "authenticated", user });
 	return user;

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -34,6 +35,20 @@ func RequireNonEmpty(w http.ResponseWriter, value, label string) (string, bool) 
 		return "", false
 	}
 	return value, true
+}
+
+// ClientIP devuelve la IP del cliente a partir de r.RemoteAddr, que para
+// este momento ya fue reescrito por middleware.RealIP (ver comentario en
+// main.go) a partir de X-Forwarded-For/X-Real-IP. Si por algo RemoteAddr no
+// tiene el formato host:port esperado, devuelve el valor crudo tal cual en
+// vez de fallar — nunca debería pasar en producción detrás del túnel, pero
+// mejor no romper el registro por esto.
+func ClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // HandleNotFound escribe 404 si err es db.ErrNotFound y devuelve true (el

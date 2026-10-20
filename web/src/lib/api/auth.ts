@@ -11,10 +11,24 @@ export type User = {
 	auth_provider: "email" | "google" | "facebook";
 	email_verified: boolean;
 	role: UserRole;
+	needs_birth_date: boolean;
 };
 
-export function register(input: { email: string; password: string; name: string }): Promise<User> {
+export function register(input: {
+	email: string;
+	password: string;
+	name: string;
+	accepted_terms: boolean;
+	birth_date: string;
+}): Promise<User> {
 	return apiFetch<User>("/auth/register", { method: "POST", body: input });
+}
+
+/** Guarda la fecha de nacimiento del usuario autenticado — la usa
+ * /completar-perfil, a la que el callback de OAuth redirige cuando falta
+ * este dato (alta social nueva o cuenta OAuth vieja sin completar). */
+export function updateBirthDate(birthDate: string): Promise<void> {
+	return apiFetch<void>("/auth/birth-date", { method: "PATCH", body: { birth_date: birthDate } });
 }
 
 export function login(input: { email: string; password: string }): Promise<User> {

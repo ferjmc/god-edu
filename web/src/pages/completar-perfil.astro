@@ -1,0 +1,12 @@
+---
+import Layout from "../layouts/Layout.astro";
+import CompleteProfile from "../components/CompleteProfile";
+---
+
+<Layout title="Completá tu perfil — Comunidad La Divina Misericordia">
+	<main class="mx-auto flex w-full max-w-[680px] flex-col items-start gap-6 px-6 py-16">
+		<h1 class="font-display text-3xl text-marian-blue-deep">Un último dato</h1>
+		<p class="font-serif text-ink-80">Nos falta tu fecha de nacimiento para terminar de crear tu cuenta.</p>
+		<CompleteProfile client:load />
+	</main>
+</Layout>

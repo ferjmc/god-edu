@@ -32,14 +32,17 @@ const (
 
 // User es el registro de cuenta de un usuario de la plataforma.
 type User struct {
-	ID            int64
-	Email         string
-	PasswordHash  *string // nil si el usuario vino por OAuth
-	Name          string
-	AuthProvider  AuthProvider
-	EmailVerified bool
-	Role          UserRole
-	CreatedAt     time.Time
+	ID              int64
+	Email           string
+	PasswordHash    *string // nil si el usuario vino por OAuth
+	Name            string
+	AuthProvider    AuthProvider
+	EmailVerified   bool
+	Role            UserRole
+	CreatedAt       time.Time
+	TermsAcceptedAt *time.Time // momento en que aceptó Términos/Privacidad; nil solo en cuentas OAuth viejas, previas a este campo
+	BirthDate       *time.Time // fecha de nacimiento; se guarda, no se usa para bloquear el registro
+	SignupIP        *string    // IP del request que creó la cuenta
 }
 
 // UserRole clasifica el nivel de acceso de un usuario. Un usuario tiene
@@ -93,6 +96,10 @@ type Repository interface {
 	// de negocio — esos viven en application.Service.UpdateRole, que es
 	// quien decide si esta llamada procede.
 	UpdateRole(ctx context.Context, id int64, role UserRole) error
+	// UpdateBirthDate guarda la fecha de nacimiento de un usuario que no la
+	// tenía todavía (alta OAuth nueva o cuenta OAuth vieja completando el
+	// dato después, ver infrastructure/http/oauth.go).
+	UpdateBirthDate(ctx context.Context, id int64, birthDate time.Time) error
 	// CountAdmins devuelve cuántos usuarios tienen hoy el rol ADMIN. La usa
 	// application.Service.UpdateRole para no dejar la plataforma sin
 	// ningún admin.
