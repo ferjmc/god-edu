@@ -137,7 +137,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		PasswordHash:    &hash,
 		Name:            req.Name,
 		AuthProvider:    domain.AuthProviderEmail,
-		Role:            domain.RolePublicMember,
+		Role:            domain.RoleCommunityMember,
 		TermsAcceptedAt: &termsAcceptedAt,
 		BirthDate:       &birthDate,
 		SignupIP:        &ip,

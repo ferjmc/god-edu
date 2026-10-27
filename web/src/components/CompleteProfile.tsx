@@ -3,6 +3,7 @@ import { useStore } from "@nanostores/react";
 import { $auth, initAuth } from "../stores/auth";
 import { updateBirthDate } from "../lib/api/auth";
 import { ApiError } from "../lib/api/client";
+import BirthDateInput from "./forms/BirthDateInput";
 
 /** Pantalla a la que redirige el callback de OAuth cuando la cuenta todavía
  * no tiene fecha de nacimiento guardada — alta social nueva, o cuenta OAuth
@@ -45,16 +46,7 @@ export default function CompleteProfile() {
 
 	return (
 		<form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
-			<label className="flex flex-col gap-1">
-				<span className="font-ui text-sm text-ink-80">Fecha de nacimiento</span>
-				<input
-					type="date"
-					required
-					value={birthDate}
-					onChange={(e) => setBirthDate(e.target.value)}
-					className="input input-bordered w-full"
-				/>
-			</label>
+			<BirthDateInput required onChange={setBirthDate} />
 
 			{error && (
 				<p role="alert" className="font-ui text-sm text-sacred-red">

@@ -132,7 +132,7 @@ func (h *OAuthHandler) findOrCreateOAuthUser(ctx context.Context, r *http.Reques
 		Name:            name,
 		AuthProvider:    domain.AuthProvider(provider),
 		EmailVerified:   true,
-		Role:            domain.RolePublicMember,
+		Role:            domain.RoleCommunityMember,
 		TermsAcceptedAt: &termsAcceptedAt,
 		SignupIP:        &ip,
 	})

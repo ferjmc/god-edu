@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { register } from "../../stores/auth";
 import { ApiError } from "../../lib/api/client";
+import BirthDateInput from "./BirthDateInput";
 
 export default function RegisterForm() {
 	const [name, setName] = useState("");
@@ -74,16 +75,7 @@ export default function RegisterForm() {
 				/>
 			</label>
 
-			<label className="flex flex-col gap-1">
-				<span className="font-ui text-sm text-ink-80">Fecha de nacimiento</span>
-				<input
-					type="date"
-					required
-					value={birthDate}
-					onChange={(e) => setBirthDate(e.target.value)}
-					className="input input-bordered w-full"
-				/>
-			</label>
+			<BirthDateInput required onChange={setBirthDate} />
 
 			<label className="flex items-start gap-2">
 				<input
