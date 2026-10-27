@@ -3,24 +3,35 @@ import { verifyEmail, resendVerification } from "../lib/api/auth";
 import { refreshAuth } from "../stores/auth";
 import { CheckCircleIcon, XCircleIcon } from "./icons";
 
-type Status = "missing" | "verifying" | "success" | "error";
+type Status = "loading" | "missing" | "ready" | "verifying" | "success" | "error";
 
 /** Lee ?token= de la URL (window.location, no props — esta página no tiene
  * ruta dinámica en Astro, el token viaja como query string) y consume
- * POST /auth/verify-email. Este es el paso que faltaba para que el link del
- * email de verificación sirva de algo: hasta ahora el backend lo mandaba
- * pero no había dónde caer al hacer clic. */
+ * POST /auth/verify-email.
+ *
+ * La verificación se dispara con un click explícito, NO al cargar la página:
+ * los escáneres de links de los proveedores de email (ej. Gmail) abren el
+ * link en un navegador headless y ejecutan JS, así que un POST automático
+ * gastaba el token de un solo uso antes de que el usuario llegara, y al
+ * hacer clic veía "link vencido". Los escáneres no hacen click en botones. */
 export default function VerifyEmailStatus() {
-	const [status, setStatus] = useState<Status>("verifying");
+	const [status, setStatus] = useState<Status>("loading");
+	const [token, setToken] = useState("");
 	const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
 	const [resendEmail, setResendEmail] = useState("");
 
 	useEffect(() => {
-		const token = new URLSearchParams(window.location.search).get("token");
-		if (!token) {
+		const t = new URLSearchParams(window.location.search).get("token");
+		if (!t) {
 			setStatus("missing");
 			return;
 		}
+		setToken(t);
+		setStatus("ready");
+	}, []);
+
+	function handleVerify() {
+		setStatus("verifying");
 		verifyEmail(token)
 			.then(() => {
 				setStatus("success");
@@ -30,7 +41,7 @@ export default function VerifyEmailStatus() {
 				void refreshAuth();
 			})
 			.catch(() => setStatus("error"));
-	}, []);
+	}
 
 	async function handleResend(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
@@ -46,8 +57,19 @@ export default function VerifyEmailStatus() {
 		}
 	}
 
-	if (status === "verifying") {
-		return <span className="loading loading-spinner loading-md text-marian-blue" aria-label="Verificando" />;
+	if (status === "loading") {
+		return <span className="loading loading-spinner loading-md text-marian-blue" aria-label="Cargando" />;
+	}
+
+	if (status === "ready" || status === "verifying") {
+		return (
+			<div className="flex flex-col items-start gap-4 rounded-[4px] border border-ink-15 bg-paper p-8">
+				<p className="font-serif text-ink-80">Hacé clic en el botón para confirmar tu dirección de email.</p>
+				<button type="button" onClick={handleVerify} disabled={status === "verifying"} className="btn btn-cta">
+					{status === "verifying" ? "Confirmando…" : "Confirmar mi email"}
+				</button>
+			</div>
+		);
 	}
 
 	if (status === "success") {
