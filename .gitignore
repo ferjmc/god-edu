@@ -13,3 +13,6 @@ api/*.exe
 .DS_Store
 
 .wrangler
+
+# Local agent skill registry
+.atl/
