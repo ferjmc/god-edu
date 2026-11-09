@@ -130,6 +130,12 @@ func (h *LessonHandler) Detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort: no poder registrar la vista no debe impedir que el
+	// usuario vea la lección, que es lo que realmente pidió.
+	if err := h.Lessons.RecordView(r.Context(), lesson.ID, userID); err != nil {
+		log.Printf("lessons: registrando vista de lección %d (usuario %d): %v", lesson.ID, userID, err)
+	}
+
 	completed, err := h.Lessons.IsCompleted(r.Context(), lesson.ID, userID)
 	if err != nil {
 		log.Printf("lessons: leyendo progreso de lección %d: %v", lesson.ID, err)

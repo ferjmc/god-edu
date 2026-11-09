@@ -61,9 +61,15 @@ export async function register(input: {
 	return user;
 }
 
+/** Si el POST falla (red caída), igual se limpia el estado local: dejar la
+ * UI como "autenticada" después de que el usuario pidió salir es peor que
+ * una cookie que vence sola. El error se sigue propagando al caller. */
 export async function logout(): Promise<void> {
-	await authApi.logout();
-	$auth.set({ status: "anonymous" });
+	try {
+		await authApi.logout();
+	} finally {
+		$auth.set({ status: "anonymous" });
+	}
 }
 
 /** Vuelve a pedir /auth/me y actualiza el store, sin importar el estado

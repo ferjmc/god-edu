@@ -178,17 +178,77 @@ func (r *Repository) IsCompleted(ctx context.Context, lessonID, userID int64) (b
 // solo refrescan completed_at — nunca hay más de una fila de progreso por
 // usuario y lección. No hay "desmarcar": una vez completada, se asume que
 // consumir la lección de nuevo no le resta valor a haberla terminado antes.
+// Completar implica haberla visto: si no había vista registrada, se fija
+// también first_viewed_at.
 func (r *Repository) MarkCompleted(ctx context.Context, lessonID, userID int64) error {
 	const q = `
-		INSERT INTO lesson_progress (user_id, lesson_id, completed, completed_at)
-		VALUES ($1, $2, true, now())
+		INSERT INTO lesson_progress (user_id, lesson_id, completed, completed_at, first_viewed_at, last_viewed_at)
+		VALUES ($1, $2, true, now(), now(), now())
 		ON CONFLICT (user_id, lesson_id)
-		DO UPDATE SET completed = true, completed_at = now()
+		DO UPDATE SET
+			completed = true,
+			completed_at = now(),
+			first_viewed_at = COALESCE(lesson_progress.first_viewed_at, now()),
+			last_viewed_at = COALESCE(lesson_progress.last_viewed_at, now())
 	`
 	if _, err := r.pool.Exec(ctx, q, userID, lessonID); err != nil {
 		return fmt.Errorf("lesson: marcando lección %d completada para usuario %d: %w", lessonID, userID, err)
 	}
 	return nil
+}
+
+// RecordView registra que el usuario abrió la lección. Mismo upsert sobre
+// UNIQUE(user_id, lesson_id) que MarkCompleted: la primera vez inserta una
+// fila con completed = false; las siguientes solo refrescan last_viewed_at
+// y nunca tocan completed.
+func (r *Repository) RecordView(ctx context.Context, lessonID, userID int64) error {
+	const q = `
+		INSERT INTO lesson_progress (user_id, lesson_id, completed, first_viewed_at, last_viewed_at)
+		VALUES ($1, $2, false, now(), now())
+		ON CONFLICT (user_id, lesson_id)
+		DO UPDATE SET
+			first_viewed_at = COALESCE(lesson_progress.first_viewed_at, now()),
+			last_viewed_at = now()
+	`
+	if _, err := r.pool.Exec(ctx, q, userID, lessonID); err != nil {
+		return fmt.Errorf("lesson: registrando vista de lección %d para usuario %d: %w", lessonID, userID, err)
+	}
+	return nil
+}
+
+// ListActivityByUser devuelve las lecciones que el usuario abrió o
+// completó, con su curso. Incluye cursos despublicados a propósito: es una
+// vista de admin sobre lo que el usuario hizo, no sobre lo que hoy puede ver.
+func (r *Repository) ListActivityByUser(ctx context.Context, userID int64) ([]domain.UserLessonActivity, error) {
+	const q = `
+		SELECT c.slug, c.title, l.order_index, l.title,
+			lp.first_viewed_at, lp.last_viewed_at, lp.completed, lp.completed_at
+		FROM lesson_progress lp
+		JOIN lessons l ON l.id = lp.lesson_id
+		JOIN courses c ON c.id = l.course_id
+		WHERE lp.user_id = $1
+			AND (lp.completed OR lp.first_viewed_at IS NOT NULL)
+		ORDER BY c.title, l.order_index
+	`
+	rows, err := r.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, fmt.Errorf("lesson: listando actividad del usuario %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	var activity []domain.UserLessonActivity
+	for rows.Next() {
+		var a domain.UserLessonActivity
+		if err := rows.Scan(&a.CourseSlug, &a.CourseTitle, &a.LessonOrder, &a.LessonTitle,
+			&a.FirstViewedAt, &a.LastViewedAt, &a.Completed, &a.CompletedAt); err != nil {
+			return nil, fmt.Errorf("lesson: leyendo actividad del usuario %d: %w", userID, err)
+		}
+		activity = append(activity, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lesson: iterando actividad del usuario %d: %w", userID, err)
+	}
+	return activity, nil
 }
 
 // CreateLesson inserta una lección nueva bajo un curso. Devuelve

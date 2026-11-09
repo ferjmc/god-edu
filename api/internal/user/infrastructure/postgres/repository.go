@@ -122,6 +122,20 @@ func (r *Repository) MarkEmailVerified(ctx context.Context, id int64) error {
 	return nil
 }
 
+// SetEmailVerified fija email_verified al valor dado. A diferencia de
+// MarkEmailVerified (flujo del link por email), permite des-verificar.
+func (r *Repository) SetEmailVerified(ctx context.Context, id int64, verified bool) error {
+	const q = `UPDATE users SET email_verified = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, verified, id)
+	if err != nil {
+		return fmt.Errorf("user: actualizando verificación de usuario %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
 // UpdatePasswordHash reemplaza el password_hash de un usuario (flujo de
 // reset de password).
 func (r *Repository) UpdatePasswordHash(ctx context.Context, id int64, passwordHash string) error {

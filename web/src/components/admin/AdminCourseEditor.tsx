@@ -11,10 +11,19 @@ import {
 } from "../../lib/api/admin";
 import { ApiError } from "../../lib/api/client";
 import LessonManager from "./LessonManager";
+import IslandErrorBoundary from "../IslandErrorBoundary";
 
 type Props = {
 	slug: string;
 };
+
+export default function AdminCourseEditor({ slug }: Props) {
+	return (
+		<IslandErrorBoundary>
+			<AdminCourseEditorContent slug={slug} />
+		</IslandErrorBoundary>
+	);
+}
 
 /** Pantalla de edición completa de un curso: datos básicos, publicar/
  * despublicar, borrar, y la currícula (lecciones + contenido, delegado a
@@ -26,7 +35,7 @@ type Props = {
  * (reload). Para el volumen de este panel (un admin, cargando contenido de
  * a poco) es más simple y más difícil de romper que ir parcheando el
  * estado local a mano en cada acción. */
-export default function AdminCourseEditor({ slug }: Props) {
+function AdminCourseEditorContent({ slug }: Props) {
 	const auth = useStore($auth);
 	const [course, setCourse] = useState<AdminCourseDetail | null>(null);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -36,8 +45,10 @@ export default function AdminCourseEditor({ slug }: Props) {
 	const [savingDetails, setSavingDetails] = useState(false);
 	const [detailsError, setDetailsError] = useState<string | null>(null);
 
-	const [togglingPublished, setTogglingPublished] = useState(false);
-	const [togglingCertificate, setTogglingCertificate] = useState(false);
+	// Un solo flag para publicar y certificado: cada uno hace reload() al
+	// terminar, y dos recargas en vuelo podían llegar en desorden y dejar
+	// estado viejo en pantalla.
+	const [busyToggle, setBusyToggle] = useState<"published" | "certificate" | null>(null);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -45,23 +56,32 @@ export default function AdminCourseEditor({ slug }: Props) {
 		if (auth.status === "loading") void initAuth();
 	}, [auth.status]);
 
-	async function reload() {
-		try {
-			const data = await getAdminCourse(slug);
-			setCourse(data);
-			setTitle(data.title);
-			setDescription(data.description ?? "");
-		} catch (err) {
-			setLoadError(err instanceof ApiError && err.status === 404 ? "No encontramos ese curso." : "No pudimos cargar el curso.");
-		}
+	/** Vuelve a pedir el curso después de una mutación. No toca título ni
+	 * descripción (pisaría lo que el admin está escribiendo sin guardar) y
+	 * propaga el error al caller, que lo muestra junto a la acción — no
+	 * tapa el editor entero si la mutación sí funcionó. */
+	async function reload(): Promise<AdminCourseDetail> {
+		const data = await getAdminCourse(slug);
+		setCourse(data);
+		return data;
+	}
+
+	function reloadAfterLessonChange() {
+		reload().catch((err) => setDetailsError(err instanceof ApiError ? err.message : "No pudimos recargar el curso."));
 	}
 
 	useEffect(() => {
 		if (auth.status !== "authenticated" || auth.user.role !== "ADMIN") return;
-		void reload();
-		// reload es estable en los hechos (no depende de nada que cambie sin
-		// que slug también cambie) — no hace falta en las deps.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		getAdminCourse(slug)
+			.then((data) => {
+				setCourse(data);
+				setTitle(data.title);
+				setDescription(data.description ?? "");
+				setLoadError(null);
+			})
+			.catch((err) => {
+				setLoadError(err instanceof ApiError && err.status === 404 ? "No encontramos ese curso." : "No pudimos cargar el curso.");
+			});
 	}, [auth.status, slug]);
 
 	async function handleSaveDetails(e: FormEvent<HTMLFormElement>) {
@@ -70,7 +90,9 @@ export default function AdminCourseEditor({ slug }: Props) {
 		setSavingDetails(true);
 		try {
 			await updateCourseDetails(slug, { title, description: description.trim() === "" ? null : description });
-			await reload();
+			const data = await reload();
+			setTitle(data.title);
+			setDescription(data.description ?? "");
 		} catch (err) {
 			setDetailsError(err instanceof ApiError ? err.message : "No se pudo guardar.");
 		} finally {
@@ -79,28 +101,30 @@ export default function AdminCourseEditor({ slug }: Props) {
 	}
 
 	async function handleTogglePublished() {
-		if (!course) return;
-		setTogglingPublished(true);
+		if (!course || busyToggle) return;
+		setDetailsError(null);
+		setBusyToggle("published");
 		try {
 			await setCoursePublished(slug, !course.published);
 			await reload();
 		} catch (err) {
 			setDetailsError(err instanceof ApiError ? err.message : "No se pudo actualizar el estado.");
 		} finally {
-			setTogglingPublished(false);
+			setBusyToggle(null);
 		}
 	}
 
 	async function handleToggleCertificate() {
-		if (!course) return;
-		setTogglingCertificate(true);
+		if (!course || busyToggle) return;
+		setDetailsError(null);
+		setBusyToggle("certificate");
 		try {
 			await setCourseCertificateEnabled(slug, !course.certificateEnabled);
 			await reload();
 		} catch (err) {
 			setDetailsError(err instanceof ApiError ? err.message : "No se pudo actualizar el certificado.");
 		} finally {
-			setTogglingCertificate(false);
+			setBusyToggle(null);
 		}
 	}
 
@@ -161,11 +185,11 @@ export default function AdminCourseEditor({ slug }: Props) {
 				<div className="flex gap-3">
 					<button
 						type="button"
-						disabled={togglingPublished}
+						disabled={busyToggle !== null}
 						onClick={() => void handleTogglePublished()}
 						className="btn btn-outline btn-sm"
 					>
-						{togglingPublished ? "Guardando…" : course.published ? "Despublicar" : "Publicar"}
+						{busyToggle === "published" ? "Guardando…" : course.published ? "Despublicar" : "Publicar"}
 					</button>
 					<button
 						type="button"
@@ -183,7 +207,7 @@ export default function AdminCourseEditor({ slug }: Props) {
 					type="checkbox"
 					className="checkbox checkbox-sm"
 					checked={course.certificateEnabled}
-					disabled={togglingCertificate}
+					disabled={busyToggle !== null}
 					onChange={() => void handleToggleCertificate()}
 				/>
 				Otorga certificado al completarse
@@ -226,7 +250,7 @@ export default function AdminCourseEditor({ slug }: Props) {
 				</button>
 			</form>
 
-			<LessonManager slug={slug} lessons={course.lessons} onChange={() => void reload()} />
+			<LessonManager slug={slug} lessons={course.lessons} onChange={reloadAfterLessonChange} />
 		</div>
 	);
 }

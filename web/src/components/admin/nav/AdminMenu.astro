@@ -1,0 +1,33 @@
+---
+import { adminNavItems, isAdminNavItemActive, type AdminNavItem } from "./adminNav";
+
+interface Props {
+	items?: AdminNavItem[];
+	class?: string;
+}
+
+const { items = adminNavItems, class: className } = Astro.props;
+const pathname = Astro.url.pathname;
+---
+
+<ul class:list={["menu w-full gap-1 font-ui text-sm", className]}>
+	{
+		items.map((item) => {
+			const active = isAdminNavItemActive(item, pathname);
+			return (
+				<li>
+					<a
+						href={item.href}
+						aria-current={active ? "page" : undefined}
+						class:list={[
+							"rounded px-4 py-2",
+							active ? "bg-liturgical-gold font-medium text-ink" : "hover:bg-marian-blue-soft",
+						]}
+					>
+						{item.label}
+					</a>
+				</li>
+			);
+		})
+	}
+</ul>

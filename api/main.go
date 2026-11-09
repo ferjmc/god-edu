@@ -239,6 +239,8 @@ func newRouter(
 
 		r.Get("/", userAdminHandler.ListUsers)
 		r.Patch("/{id}", userAdminHandler.UpdateUserRole)
+		r.Patch("/{id}/verification", userAdminHandler.UpdateUserVerification)
+		r.Get("/{id}/lessons", lessonAdminHandler.UserLessonActivity)
 	})
 
 	r.Route("/auth", func(r chi.Router) {

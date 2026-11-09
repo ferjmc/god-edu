@@ -25,7 +25,7 @@ export default function AuthStatus() {
 					Mis cursos
 				</a>
 				{auth.user.role === "ADMIN" && (
-					<a href="/admin/cursos" className="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">
+					<a href="/admin" className="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">
 						Admin
 					</a>
 				)}

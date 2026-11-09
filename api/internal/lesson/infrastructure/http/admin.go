@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -468,6 +469,55 @@ func (h *AdminHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Actividad de un usuario ---
+
+type userLessonActivityResponse struct {
+	CourseSlug    string     `json:"courseSlug"`
+	CourseTitle   string     `json:"courseTitle"`
+	LessonOrder   int        `json:"lessonOrder"`
+	LessonTitle   string     `json:"lessonTitle"`
+	FirstViewedAt *time.Time `json:"firstViewedAt"`
+	LastViewedAt  *time.Time `json:"lastViewedAt"`
+	Completed     bool       `json:"completed"`
+	CompletedAt   *time.Time `json:"completedAt"`
+}
+
+// UserLessonActivity devuelve las lecciones que un usuario abrió o
+// completó (GET /admin/users/{id}/lessons). Vive en este dominio porque los
+// datos son de lesson, aunque la ruta cuelgue de /admin/users. Un usuario
+// inexistente devuelve [] y no 404: el panel ya conoce al usuario por la
+// lista, y no vale una consulta extra a users solo para distinguirlo.
+func (h *AdminHandler) UserLessonActivity(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "id de usuario inválido")
+		return
+	}
+
+	activity, err := h.Lessons.ListActivityByUser(r.Context(), userID)
+	if err != nil {
+		log.Printf("admin: listando actividad del usuario %d: %v", userID, err)
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener las lecciones del usuario")
+		return
+	}
+
+	response := make([]userLessonActivityResponse, len(activity))
+	for i, a := range activity {
+		response[i] = userLessonActivityResponse{
+			CourseSlug:    a.CourseSlug,
+			CourseTitle:   a.CourseTitle,
+			LessonOrder:   a.LessonOrder,
+			LessonTitle:   a.LessonTitle,
+			FirstViewedAt: a.FirstViewedAt,
+			LastViewedAt:  a.LastViewedAt,
+			Completed:     a.Completed,
+			CompletedAt:   a.CompletedAt,
+		}
+	}
+
+	httpkit.WriteJSON(w, http.StatusOK, response)
 }
 
 // resolveContent lee slug + order de lección + order de contenido de la URL

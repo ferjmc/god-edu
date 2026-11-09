@@ -28,6 +28,19 @@ export type AdminUser = {
 	createdAt: string;
 };
 
+/** Mirrors lessonhttp.userLessonActivityResponse: una lección que el
+ * usuario abrió y/o completó. Las fechas pueden venir null. */
+export type AdminUserLessonActivity = {
+	courseSlug: string;
+	courseTitle: string;
+	lessonOrder: number;
+	lessonTitle: string;
+	firstViewedAt: string | null;
+	lastViewedAt: string | null;
+	completed: boolean;
+	completedAt: string | null;
+};
+
 /** Mirrors handlers.lessonContentResponse. `order` is the stable id used to
  * edit/delete this piece — NOT its position in the array, which shifts as
  * soon as anything is deleted out of order (see the comment on the Go
@@ -54,14 +67,20 @@ export type AdminCourseDetail = AdminCourse & {
 };
 
 /** Todos los cursos, publicados y en borrador. */
-export function listAdminCourses(): Promise<AdminCourse[]> {
-	return apiFetch<AdminCourse[]>("/admin/courses");
+export async function listAdminCourses(): Promise<AdminCourse[]> {
+	return (await apiFetch<AdminCourse[] | null>("/admin/courses")) ?? [];
 }
 
 /** Un curso con toda su currícula (lecciones + contenido de cada una), para
- * armar la pantalla de edición de una sola pasada. */
-export function getAdminCourse(slug: string): Promise<AdminCourseDetail> {
-	return apiFetch<AdminCourseDetail>(`/admin/courses/${slug}`);
+ * armar la pantalla de edición de una sola pasada. Los arrays anidados se
+ * normalizan acá (Go serializa un slice nil como null) para que los
+ * componentes puedan hacer .map/.length sin guardas. */
+export async function getAdminCourse(slug: string): Promise<AdminCourseDetail> {
+	const course = await apiFetch<AdminCourseDetail>(`/admin/courses/${slug}`);
+	return {
+		...course,
+		lessons: (course.lessons ?? []).map((lesson) => ({ ...lesson, content: lesson.content ?? [] })),
+	};
 }
 
 export function createCourse(input: { title: string; slug: string; description?: string | null }): Promise<AdminCourse> {
@@ -137,8 +156,8 @@ export function deleteContent(slug: string, lessonOrder: number, contentOrder: n
 	return apiFetch(`/admin/courses/${slug}/lessons/${lessonOrder}/content/${contentOrder}`, { method: "DELETE" });
 }
 
-export function listAdminUsers(): Promise<AdminUser[]> {
-	return apiFetch<AdminUser[]>("/admin/users");
+export async function listAdminUsers(): Promise<AdminUser[]> {
+	return (await apiFetch<AdminUser[] | null>("/admin/users")) ?? [];
 }
 
 /** Cambia el rol de un usuario. El propio API rechaza que un admin se
@@ -146,4 +165,15 @@ export function listAdminUsers(): Promise<AdminUser[]> {
  * repite esa validación, se confía en el 400 que devuelve. */
 export function updateUserRole(id: number, role: UserRole): Promise<void> {
 	return apiFetch<void>(`/admin/users/${id}`, { method: "PATCH", body: { role } });
+}
+
+/** Marca o desmarca la cuenta como verificada (ver
+ * AdminHandler.UpdateUserVerification). */
+export function setUserVerified(id: number, verified: boolean): Promise<void> {
+	return apiFetch<void>(`/admin/users/${id}/verification`, { method: "PATCH", body: { verified } });
+}
+
+/** Lecciones que el usuario abrió o completó, ordenadas por curso. */
+export async function listUserLessonActivity(id: number): Promise<AdminUserLessonActivity[]> {
+	return (await apiFetch<AdminUserLessonActivity[] | null>(`/admin/users/${id}/lessons`)) ?? [];
 }

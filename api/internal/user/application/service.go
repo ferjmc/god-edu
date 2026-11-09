@@ -40,6 +40,10 @@ func (s *Service) MarkEmailVerified(ctx context.Context, id int64) error {
 	return s.repo.MarkEmailVerified(ctx, id)
 }
 
+func (s *Service) SetEmailVerified(ctx context.Context, id int64, verified bool) error {
+	return s.repo.SetEmailVerified(ctx, id, verified)
+}
+
 func (s *Service) UpdatePasswordHash(ctx context.Context, id int64, passwordHash string) error {
 	return s.repo.UpdatePasswordHash(ctx, id, passwordHash)
 }

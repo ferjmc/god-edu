@@ -30,6 +30,22 @@ type LessonSummary struct {
 	Completed bool
 }
 
+// UserLessonActivity es una lección que un usuario puntual abrió y/o
+// completó, con el curso al que pertenece. La usa el panel admin para ver
+// el recorrido de un usuario. FirstViewedAt/LastViewedAt pueden ser nil en
+// una lección completada si nunca se registró la vista (no debería pasar
+// después de la migración 000007, pero el esquema lo permite).
+type UserLessonActivity struct {
+	CourseSlug    string
+	CourseTitle   string
+	LessonOrder   int
+	LessonTitle   string
+	FirstViewedAt *time.Time
+	LastViewedAt  *time.Time
+	Completed     bool
+	CompletedAt   *time.Time
+}
+
 // ContentType identifica qué tipo de contenido lleva una fila de
 // lesson_content. Coincide 1:1 con el CHECK de la columna en la base.
 type ContentType string
@@ -76,6 +92,12 @@ type Repository interface {
 	IsCompleted(ctx context.Context, lessonID, userID int64) (bool, error)
 	// MarkCompleted registra que el usuario dado completó la lección dada.
 	MarkCompleted(ctx context.Context, lessonID, userID int64) error
+	// RecordView registra que el usuario dado abrió la lección dada: la
+	// primera vez fija first_viewed_at, las siguientes solo last_viewed_at.
+	RecordView(ctx context.Context, lessonID, userID int64) error
+	// ListActivityByUser devuelve las lecciones que el usuario dado abrió
+	// o completó, ordenadas por curso y orden de lección.
+	ListActivityByUser(ctx context.Context, userID int64) ([]UserLessonActivity, error)
 	// CreateLesson inserta una lección nueva bajo un curso.
 	CreateLesson(ctx context.Context, l Lesson) (Lesson, error)
 	// CreateContent inserta una pieza de contenido bajo una lección.

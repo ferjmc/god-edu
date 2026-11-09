@@ -32,6 +32,9 @@ export default function ContentManager({ slug, lessonOrder, content, onChange }:
 	const [newYoutubeUrl, setNewYoutubeUrl] = useState("");
 	const [newBody, setNewBody] = useState("");
 	const [newFile, setNewFile] = useState<File | null>(null);
+	// El <input type="file"> no se puede controlar con value; cambiarle la
+	// key lo remonta vacío después de subir un PDF.
+	const [fileInputKey, setFileInputKey] = useState(0);
 	const [creating, setCreating] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
 
@@ -79,6 +82,7 @@ export default function ContentManager({ slug, lessonOrder, content, onChange }:
 		setNewYoutubeUrl("");
 		setNewBody("");
 		setNewFile(null);
+		setFileInputKey((k) => k + 1);
 	}
 
 	async function handleCreate(e: FormEvent<HTMLFormElement>) {
@@ -238,6 +242,7 @@ export default function ContentManager({ slug, lessonOrder, content, onChange }:
 					<label className="flex flex-col gap-1">
 						<span className="font-ui text-sm text-ink-80">Archivo PDF</span>
 						<input
+							key={fileInputKey}
 							type="file"
 							accept="application/pdf"
 							required

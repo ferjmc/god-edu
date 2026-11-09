@@ -1,0 +1,28 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { adminNavItems } from "../../components/admin/nav/adminNav";
+
+// Página estática sin datos: los datos de cada sección los resuelve su
+// propia isla (con sesión + rol ADMIN), acá solo hay accesos.
+const sections = adminNavItems.filter((item) => item.href !== "/admin");
+---
+
+<DashboardLayout title="Administración — Comunidad La Divina Misericordia">
+	<div class="mx-auto max-w-full px-6 py-10 md:py-16">
+		<h1 class="font-display text-3xl text-marian-blue-deep">Administración</h1>
+		<p class="mt-2 max-w-[680px] font-serif text-ink-80">Elegí qué querés administrar.</p>
+
+		<div class="mt-10 grid gap-6 sm:grid-cols-2">
+			{
+				sections.map((section) => (
+					<a href={section.href} class="card border border-ink-15 bg-paper transition-shadow hover:shadow-md">
+						<div class="card-body">
+							<h2 class="card-title font-display text-marian-blue-deep">{section.label}</h2>
+							<p class="font-serif text-ink-80">{section.description}</p>
+						</div>
+					</a>
+				))
+			}
+		</div>
+	</div>
+</DashboardLayout>

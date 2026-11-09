@@ -47,6 +47,14 @@ func (s *Service) MarkCompleted(ctx context.Context, lessonID, userID int64) err
 	return s.repo.MarkCompleted(ctx, lessonID, userID)
 }
 
+func (s *Service) RecordView(ctx context.Context, lessonID, userID int64) error {
+	return s.repo.RecordView(ctx, lessonID, userID)
+}
+
+func (s *Service) ListActivityByUser(ctx context.Context, userID int64) ([]domain.UserLessonActivity, error) {
+	return s.repo.ListActivityByUser(ctx, userID)
+}
+
 func (s *Service) CreateLesson(ctx context.Context, l domain.Lesson) (domain.Lesson, error) {
 	return s.repo.CreateLesson(ctx, l)
 }
