@@ -9,12 +9,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ferjmc/god-edu/api/auth"
+	"github.com/ferjmc/god-edu/api/db"
 	"github.com/ferjmc/god-edu/api/httpkit"
 	certapp "github.com/ferjmc/god-edu/api/internal/certificate/application"
 	courseapp "github.com/ferjmc/god-edu/api/internal/course/application"
 	coursedomain "github.com/ferjmc/god-edu/api/internal/course/domain"
 	coursehttp "github.com/ferjmc/god-edu/api/internal/course/infrastructure/http"
 	"github.com/ferjmc/god-edu/api/internal/lesson/application"
+	"github.com/ferjmc/god-edu/api/internal/lesson/domain"
 	userapp "github.com/ferjmc/god-edu/api/internal/user/application"
 )
 
@@ -129,13 +131,8 @@ func (h *LessonHandler) Detail(w http.ResponseWriter, r *http.Request) {
 
 	userID, _ := auth.UserIDFromContext(r.Context())
 
-	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), course.ID, order)
-	if err != nil {
-		if httpkit.HandleNotFound(w, err, "lección no encontrada") {
-			return
-		}
-		log.Printf("lessons: obteniendo lección %d/%d: %v", course.ID, order, err)
-		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo obtener la lección")
+	lesson, ok := h.resolveVisibleLesson(w, r, course.ID, order)
+	if !ok {
 		return
 	}
 
@@ -201,13 +198,8 @@ func (h *LessonHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 
 	userID, _ := auth.UserIDFromContext(r.Context())
 
-	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), course.ID, order)
-	if err != nil {
-		if httpkit.HandleNotFound(w, err, "lección no encontrada") {
-			return
-		}
-		log.Printf("lessons: obteniendo lección %d/%d: %v", course.ID, order, err)
-		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo obtener la lección")
+	lesson, ok := h.resolveVisibleLesson(w, r, course.ID, order)
+	if !ok {
 		return
 	}
 
@@ -222,8 +214,29 @@ func (h *LessonHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	httpkit.WriteJSON(w, http.StatusOK, completeResponse{Completed: true})
 }
 
+// resolveVisibleLesson busca la lección por orden dentro del curso, o
+// escribe la respuesta de error y devuelve ok=false. Una lección en una
+// clase sin publicar responde 404 igual que una inexistente — para todos,
+// incluso admins: la vista previa del admin es el editor.
+func (h *LessonHandler) resolveVisibleLesson(w http.ResponseWriter, r *http.Request, courseID int64, order int) (domain.Lesson, bool) {
+	lesson, err := h.Lessons.GetByCourseAndOrder(r.Context(), courseID, order)
+	if err == nil && lesson.Hidden {
+		err = db.ErrNotFound
+	}
+	if err != nil {
+		if httpkit.HandleNotFound(w, err, "lección no encontrada") {
+			return domain.Lesson{}, false
+		}
+		log.Printf("lessons: obteniendo lección %d/%d: %v", courseID, order, err)
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo obtener la lección")
+		return domain.Lesson{}, false
+	}
+	return lesson, true
+}
+
 // issueCertificateIfComplete emite el certificado del curso si, tras marcar
-// esta lección, el usuario completó el 100% de la currícula y el curso
+// esta lección, el usuario completó el 100% de las lecciones del curso
+// (incluidas las de clases sin publicar, ver HasCompletedAll) y el curso
 // tiene CertificateEnabled. Best-effort a propósito, igual que el resto de
 // esta función: un problema emitiendo el certificado no debe impedir que la
 // lección quede marcada como completa, que es la acción que el usuario
@@ -235,18 +248,13 @@ func (h *LessonHandler) issueCertificateIfComplete(ctx context.Context, course c
 		return
 	}
 
-	lessons, err := h.Lessons.ListByCourse(ctx, course.ID, userID)
+	completedAll, err := h.Lessons.HasCompletedAll(ctx, course.ID, userID)
 	if err != nil {
 		log.Printf("lessons: verificando elegibilidad de certificado (curso %d, usuario %d): %v", course.ID, userID, err)
 		return
 	}
-	if len(lessons) == 0 {
+	if !completedAll {
 		return
-	}
-	for _, l := range lessons {
-		if !l.Completed {
-			return
-		}
 	}
 
 	user, err := h.Users.GetByID(ctx, userID)

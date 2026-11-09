@@ -67,6 +67,9 @@ export type AdminLesson = {
 export type AdminClass = {
 	order: number;
 	title: string;
+	/** false = sus sesiones no se le muestran al alumno ni cuentan en su
+	 * progreso (sí para el certificado). Las clases nacen ocultas. */
+	published: boolean;
 };
 
 /** Mirrors adminCourseDetailResponse. */
@@ -125,6 +128,10 @@ export function createClass(slug: string, input: { title: string; order: number 
 
 export function updateClass(slug: string, order: number, title: string): Promise<AdminClass> {
 	return apiFetch(`/admin/courses/${slug}/classes/${order}`, { method: "PUT", body: { title } });
+}
+
+export function setClassPublished(slug: string, order: number, published: boolean): Promise<AdminClass> {
+	return apiFetch(`/admin/courses/${slug}/classes/${order}`, { method: "PATCH", body: { published } });
 }
 
 /** Borra la clase. Sus sesiones (con su contenido y el progreso de los

@@ -125,8 +125,9 @@ type adminLessonResponse struct {
 }
 
 type adminClassResponse struct {
-	Order int    `json:"order"`
-	Title string `json:"title"`
+	Order     int    `json:"order"`
+	Title     string `json:"title"`
+	Published bool   `json:"published"`
 }
 
 type adminCourseDetailResponse struct {
@@ -196,7 +197,7 @@ func (h *AdminHandler) CourseDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	classesResponse := make([]adminClassResponse, len(classes))
 	for i, c := range classes {
-		classesResponse[i] = adminClassResponse{Order: c.OrderIndex, Title: c.Title}
+		classesResponse[i] = adminClassResponse{Order: c.OrderIndex, Title: c.Title, Published: c.Published}
 	}
 
 	httpkit.WriteJSON(w, http.StatusOK, adminCourseDetailResponse{

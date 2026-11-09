@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { createClass, updateClass, deleteClass, type AdminClass } from "../../lib/api/admin";
+import { createClass, updateClass, deleteClass, setClassPublished, type AdminClass } from "../../lib/api/admin";
 import { ApiError } from "../../lib/api/client";
 
 type Props = {
@@ -52,6 +52,19 @@ export default function ClassManager({ slug, classes, onChange }: Props) {
 			onChange();
 		} catch (err) {
 			setRowError(err instanceof ApiError ? err.message : "No se pudo renombrar la clase.");
+		} finally {
+			setBusyOrder(null);
+		}
+	}
+
+	async function handleTogglePublished(c: AdminClass) {
+		setRowError(null);
+		setBusyOrder(c.order);
+		try {
+			await setClassPublished(slug, c.order, !c.published);
+			onChange();
+		} catch (err) {
+			setRowError(err instanceof ApiError ? err.message : "No se pudo cambiar la publicación de la clase.");
 		} finally {
 			setBusyOrder(null);
 		}
@@ -114,6 +127,17 @@ export default function ClassManager({ slug, classes, onChange }: Props) {
 									<span className="flex-1 font-ui text-sm text-ink-80">
 										{c.order}. {c.title}
 									</span>
+									<span className={`badge badge-sm ${c.published ? "badge-success" : "badge-ghost"}`}>
+										{c.published ? "Publicada" : "Oculta"}
+									</span>
+									<button
+										type="button"
+										disabled={busyOrder === c.order}
+										onClick={() => void handleTogglePublished(c)}
+										className="btn btn-outline btn-sm"
+									>
+										{c.published ? "Ocultar" : "Publicar"}
+									</button>
 									<button
 										type="button"
 										onClick={() => {
@@ -169,6 +193,9 @@ export default function ClassManager({ slug, classes, onChange }: Props) {
 						{createError}
 					</p>
 				)}
+				<p className="w-full font-ui text-xs text-ink-60">
+					Las clases nuevas se crean ocultas: sus sesiones no las ven los alumnos hasta que la publiques.
+				</p>
 			</form>
 		</div>
 	);

@@ -42,7 +42,11 @@ export default function LessonManager({ slug, classes, lessons, onChange }: Prop
 		if (newClassOrder !== null && !classes.some((c) => c.order === newClassOrder)) setNewClassOrder(null);
 	}, [classes, newClassOrder]);
 
-	const classTitle = (order: number | undefined) => classes.find((c) => c.order === order)?.title;
+	const classLabel = (order: number | undefined) => {
+		const c = classes.find((c) => c.order === order);
+		if (!c) return "Sin clase";
+		return c.published ? c.title : `${c.title} (oculta)`;
+	};
 
 	async function handleCreate(e: FormEvent<HTMLFormElement>) {
 		e.preventDefault();
@@ -141,7 +145,7 @@ export default function LessonManager({ slug, classes, lessons, onChange }: Prop
 											<span className="flex-1 font-ui text-sm text-ink-80">
 												{lesson.order}. {lesson.title}
 											</span>
-											<span className="font-ui text-xs text-ink-60">{classTitle(lesson.classOrder) ?? "Sin clase"}</span>
+											<span className="font-ui text-xs text-ink-60">{classLabel(lesson.classOrder)}</span>
 											<button
 												type="button"
 												onClick={() => {
@@ -235,6 +239,7 @@ function ClassSelect({
 			{classes.map((c) => (
 				<option key={c.order} value={c.order}>
 					{c.order}. {c.title}
+					{c.published ? "" : " (oculta)"}
 				</option>
 			))}
 		</select>

@@ -19,8 +19,9 @@ import (
 // nunca el id interno.
 
 type classResponse struct {
-	Order int    `json:"order"`
-	Title string `json:"title"`
+	Order     int    `json:"order"`
+	Title     string `json:"title"`
+	Published bool   `json:"published"`
 }
 
 type createClassRequest struct {
@@ -71,7 +72,7 @@ func (h *AdminHandler) CreateClass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpkit.WriteJSON(w, http.StatusCreated, classResponse{Order: class.OrderIndex, Title: class.Title})
+	httpkit.WriteJSON(w, http.StatusCreated, classResponse{Order: class.OrderIndex, Title: class.Title, Published: class.Published})
 }
 
 type updateClassRequest struct {
@@ -104,7 +105,38 @@ func (h *AdminHandler) UpdateClass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpkit.WriteJSON(w, http.StatusOK, classResponse{Order: class.OrderIndex, Title: title})
+	httpkit.WriteJSON(w, http.StatusOK, classResponse{Order: class.OrderIndex, Title: title, Published: class.Published})
+}
+
+type setClassPublishedRequest struct {
+	Published bool `json:"published"`
+}
+
+// SetClassPublished publica u oculta una clase. Mismo patrón que la
+// publicación de un curso: un paso aparte del renombrado, para poder cargar
+// las sesiones de una clase oculta y publicarla cuando está lista.
+func (h *AdminHandler) SetClassPublished(w http.ResponseWriter, r *http.Request) {
+	class, ok := h.resolveClass(w, r)
+	if !ok {
+		return
+	}
+
+	var req setClassPublishedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+
+	if err := h.Lessons.SetClassPublished(r.Context(), class.ID, req.Published); err != nil {
+		if httpkit.HandleNotFound(w, err, "clase no encontrada") {
+			return
+		}
+		log.Printf("admin: cambiando publicación de clase %d: %v", class.ID, err)
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo actualizar la clase")
+		return
+	}
+
+	httpkit.WriteJSON(w, http.StatusOK, classResponse{Order: class.OrderIndex, Title: class.Title, Published: req.Published})
 }
 
 // DeleteClass borra una clase. Sus lecciones, su contenido y el progreso de

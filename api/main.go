@@ -224,6 +224,7 @@ func newRouter(
 		r.Patch("/{slug}/certificate", courseAdminHandler.SetCertificateEnabled)
 		r.Post("/{slug}/classes", lessonAdminHandler.CreateClass)
 		r.Put("/{slug}/classes/{classOrder}", lessonAdminHandler.UpdateClass)
+		r.Patch("/{slug}/classes/{classOrder}", lessonAdminHandler.SetClassPublished)
 		r.Delete("/{slug}/classes/{classOrder}", lessonAdminHandler.DeleteClass)
 		r.Post("/{slug}/lessons", lessonAdminHandler.CreateLesson)
 		r.Put("/{slug}/lessons/{order}", lessonAdminHandler.UpdateLesson)

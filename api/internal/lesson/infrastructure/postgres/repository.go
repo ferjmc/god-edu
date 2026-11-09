@@ -41,25 +41,26 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 // lessonColumns asume los alias l (lessons) y cc (LEFT JOIN course_classes)
 // y va en el mismo orden que lee scanLesson.
-const lessonColumns = `l.id, l.course_id, l.class_id, cc.order_index, cc.title, l.title, l.order_index, l.created_at`
+const lessonColumns = `l.id, l.course_id, l.class_id, cc.order_index, cc.title, COALESCE(NOT cc.published, false), l.title, l.order_index, l.created_at`
 
 func scanLesson(row pgx.Row) (domain.Lesson, error) {
 	var l domain.Lesson
-	err := row.Scan(&l.ID, &l.CourseID, &l.ClassID, &l.ClassOrder, &l.ClassTitle, &l.Title, &l.OrderIndex, &l.CreatedAt)
+	err := row.Scan(&l.ID, &l.CourseID, &l.ClassID, &l.ClassOrder, &l.ClassTitle, &l.Hidden, &l.Title, &l.OrderIndex, &l.CreatedAt)
 	return l, err
 }
 
-// ListByCourse devuelve la currícula de un curso: todas sus lecciones en
-// orden, con el estado de completado del usuario dado. El LEFT JOIN es a
-// propósito: un usuario sin ninguna fila en lesson_progress todavía tiene
-// que ver la lista completa, solo que con completed = false en todas.
+// ListByCourse devuelve la currícula de un curso: sus lecciones visibles
+// (sin clase o en una clase publicada) en orden, con el estado de
+// completado del usuario dado. El LEFT JOIN es a propósito: un usuario sin
+// ninguna fila en lesson_progress todavía tiene que ver la lista completa,
+// solo que con completed = false en todas.
 func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) ([]domain.LessonSummary, error) {
 	const q = `
 		SELECT l.order_index, l.title, COALESCE(lp.completed, false), cc.order_index, cc.title
 		FROM lessons l
 		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $2
 		LEFT JOIN course_classes cc ON cc.id = l.class_id
-		WHERE l.course_id = $1
+		WHERE l.course_id = $1 AND (l.class_id IS NULL OR cc.published)
 		ORDER BY l.order_index
 	`
 	rows, err := r.pool.Query(ctx, q, courseID, userID)
@@ -81,6 +82,24 @@ func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) (
 	}
 
 	return lessons, nil
+}
+
+// HasCompletedAll indica si el usuario completó todas las lecciones del
+// curso. A diferencia de ListByCourse no filtra clases sin publicar, a
+// propósito: es el chequeo del certificado, y una lección oculta (que el
+// alumno no puede completar) tiene que bloquearlo.
+func (r *Repository) HasCompletedAll(ctx context.Context, courseID, userID int64) (bool, error) {
+	const q = `
+		SELECT COUNT(l.id) > 0 AND COALESCE(bool_and(COALESCE(lp.completed, false)), false)
+		FROM lessons l
+		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $2
+		WHERE l.course_id = $1
+	`
+	var all bool
+	if err := r.pool.QueryRow(ctx, q, courseID, userID).Scan(&all); err != nil {
+		return false, fmt.Errorf("lesson: verificando curso %d completo para usuario %d: %w", courseID, userID, err)
+	}
+	return all, nil
 }
 
 // ListAllByCourse devuelve todas las lecciones de un curso en orden, sin el
@@ -303,7 +322,7 @@ func (r *Repository) SetLessonClass(ctx context.Context, lessonID int64, classID
 // ListClasses devuelve las clases de un curso en orden.
 func (r *Repository) ListClasses(ctx context.Context, courseID int64) ([]domain.Class, error) {
 	const q = `
-		SELECT id, course_id, title, order_index, created_at
+		SELECT id, course_id, title, order_index, published, created_at
 		FROM course_classes
 		WHERE course_id = $1
 		ORDER BY order_index
@@ -317,7 +336,7 @@ func (r *Repository) ListClasses(ctx context.Context, courseID int64) ([]domain.
 	var classes []domain.Class
 	for rows.Next() {
 		var c domain.Class
-		if err := rows.Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.Published, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("lesson: leyendo clase del curso %d: %w", courseID, err)
 		}
 		classes = append(classes, c)
@@ -332,13 +351,13 @@ func (r *Repository) ListClasses(ctx context.Context, courseID int64) ([]domain.
 // esquema de identificador público que las lecciones.
 func (r *Repository) GetClassByCourseAndOrder(ctx context.Context, courseID int64, order int) (domain.Class, error) {
 	const q = `
-		SELECT id, course_id, title, order_index, created_at
+		SELECT id, course_id, title, order_index, published, created_at
 		FROM course_classes
 		WHERE course_id = $1 AND order_index = $2
 	`
 	var c domain.Class
 	err := r.pool.QueryRow(ctx, q, courseID, order).
-		Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.CreatedAt)
+		Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.Published, &c.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Class{}, db.ErrNotFound
@@ -349,14 +368,15 @@ func (r *Repository) GetClassByCourseAndOrder(ctx context.Context, courseID int6
 }
 
 // CreateClass inserta una clase bajo un curso. Devuelve db.ErrConflict si
-// el order_index ya está usado en el curso.
+// el order_index ya está usado en el curso. La clase nace sin publicar
+// (DEFAULT de la columna).
 func (r *Repository) CreateClass(ctx context.Context, c domain.Class) (domain.Class, error) {
 	const q = `
 		INSERT INTO course_classes (course_id, title, order_index)
 		VALUES ($1, $2, $3)
-		RETURNING id, created_at
+		RETURNING id, published, created_at
 	`
-	err := r.pool.QueryRow(ctx, q, c.CourseID, c.Title, c.OrderIndex).Scan(&c.ID, &c.CreatedAt)
+	err := r.pool.QueryRow(ctx, q, c.CourseID, c.Title, c.OrderIndex).Scan(&c.ID, &c.Published, &c.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -373,6 +393,19 @@ func (r *Repository) UpdateClassTitle(ctx context.Context, classID int64, title 
 	tag, err := r.pool.Exec(ctx, q, title, classID)
 	if err != nil {
 		return fmt.Errorf("lesson: renombrando clase %d: %w", classID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
+// SetClassPublished publica u oculta una clase.
+func (r *Repository) SetClassPublished(ctx context.Context, classID int64, published bool) error {
+	const q = `UPDATE course_classes SET published = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, published, classID)
+	if err != nil {
+		return fmt.Errorf("lesson: cambiando publicación de clase %d: %w", classID, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return db.ErrNotFound

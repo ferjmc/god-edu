@@ -2,11 +2,17 @@
 -- interfaz, cada fila de lessons es una "sesión" y sigue siendo la unidad
 -- de progreso y la que cuenta para el certificado — una clase no tiene
 -- progreso propio, se calcula a partir de sus sesiones.
+--
+-- published nace en false, igual que un curso en borrador: el admin carga
+-- las sesiones de una clase oculta y la publica cuando está lista. Las
+-- sesiones de una clase oculta no se le muestran al alumno ni cuentan en
+-- su progreso, pero sí cuentan para el certificado.
 CREATE TABLE course_classes (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     course_id   BIGINT NOT NULL REFERENCES courses (id) ON DELETE CASCADE,
     title       TEXT NOT NULL,
     order_index INTEGER NOT NULL,
+    published   BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -23,6 +23,10 @@ func (s *Service) ListByCourse(ctx context.Context, courseID, userID int64) ([]d
 	return s.repo.ListByCourse(ctx, courseID, userID)
 }
 
+func (s *Service) HasCompletedAll(ctx context.Context, courseID, userID int64) (bool, error) {
+	return s.repo.HasCompletedAll(ctx, courseID, userID)
+}
+
 func (s *Service) ListAllByCourse(ctx context.Context, courseID int64) ([]domain.Lesson, error) {
 	return s.repo.ListAllByCourse(ctx, courseID)
 }
@@ -103,6 +107,10 @@ func (s *Service) CreateClass(ctx context.Context, c domain.Class) (domain.Class
 
 func (s *Service) UpdateClassTitle(ctx context.Context, classID int64, title string) error {
 	return s.repo.UpdateClassTitle(ctx, classID, title)
+}
+
+func (s *Service) SetClassPublished(ctx context.Context, classID int64, published bool) error {
+	return s.repo.SetClassPublished(ctx, classID, published)
 }
 
 func (s *Service) DeleteClass(ctx context.Context, classID int64) error {

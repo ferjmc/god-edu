@@ -17,12 +17,16 @@ import (
 // ClassID es nil si la lección no está asignada a ninguna clase.
 // ClassOrder/ClassTitle son de solo lectura (vienen del join con
 // course_classes); para cambiar de clase se usa Service.SetLessonClass.
+//
+// Hidden también es de solo lectura: true si la lección está en una clase
+// sin publicar. Una lección sin clase nunca está oculta.
 type Lesson struct {
 	ID         int64
 	CourseID   int64
 	ClassID    *int64
 	ClassOrder *int
 	ClassTitle *string
+	Hidden     bool
 	Title      string
 	OrderIndex int
 	CreatedAt  time.Time
@@ -30,11 +34,16 @@ type Lesson struct {
 
 // Class agrupa lecciones de un curso. No tiene progreso propio: el avance
 // de una clase se calcula a partir de las lecciones que contiene.
+//
+// Published = false oculta sus lecciones al alumno (currícula, detalle y
+// progreso), pero siguen contando para el certificado: nadie se certifica
+// antes de que el curso esté publicado completo.
 type Class struct {
 	ID         int64
 	CourseID   int64
 	Title      string
 	OrderIndex int
+	Published  bool
 	CreatedAt  time.Time
 }
 
@@ -95,9 +104,14 @@ type LessonContent struct {
 
 // Repository es el puerto que expone infrastructure/postgres.
 type Repository interface {
-	// ListByCourse devuelve la currícula de un curso: todas sus lecciones en
-	// orden, con el estado de completado del usuario dado.
+	// ListByCourse devuelve la currícula de un curso: sus lecciones visibles
+	// (sin clase o en una clase publicada) en orden, con el estado de
+	// completado del usuario dado.
 	ListByCourse(ctx context.Context, courseID, userID int64) ([]LessonSummary, error)
+	// HasCompletedAll indica si el usuario completó todas las lecciones del
+	// curso, incluidas las de clases sin publicar. False si el curso no
+	// tiene lecciones.
+	HasCompletedAll(ctx context.Context, courseID, userID int64) (bool, error)
 	// ListAllByCourse devuelve todas las lecciones de un curso en orden, sin
 	// el estado de completado de ningún usuario en particular — la usa el
 	// panel admin.
@@ -133,6 +147,8 @@ type Repository interface {
 	CreateClass(ctx context.Context, c Class) (Class, error)
 	// UpdateClassTitle renombra una clase.
 	UpdateClassTitle(ctx context.Context, classID int64, title string) error
+	// SetClassPublished publica u oculta una clase.
+	SetClassPublished(ctx context.Context, classID int64, published bool) error
 	// DeleteClass borra una clase; sus lecciones quedan sin clase.
 	DeleteClass(ctx context.Context, classID int64) error
 	// CreateContent inserta una pieza de contenido bajo una lección.
