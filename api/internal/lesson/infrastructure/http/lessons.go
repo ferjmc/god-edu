@@ -38,10 +38,15 @@ type LessonHandler struct {
 	Certificates *certapp.Service
 }
 
+// summaryResponse es una lección ("sesión" en la interfaz) dentro de la
+// currícula. ClassOrder/ClassTitle se omiten si no está en ninguna clase —
+// la lista sigue siendo plana y el frontend la agrupa por clase.
 type summaryResponse struct {
-	Order     int    `json:"order"`
-	Title     string `json:"title"`
-	Completed bool   `json:"completed"`
+	Order      int     `json:"order"`
+	Title      string  `json:"title"`
+	Completed  bool    `json:"completed"`
+	ClassOrder *int    `json:"classOrder,omitempty"`
+	ClassTitle *string `json:"classTitle,omitempty"`
 }
 
 // List devuelve la currícula completa del curso: todas sus lecciones en
@@ -68,7 +73,10 @@ func (h *LessonHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	response := make([]summaryResponse, len(lessons))
 	for i, l := range lessons {
-		response[i] = summaryResponse{Order: l.Order, Title: l.Title, Completed: l.Completed}
+		response[i] = summaryResponse{
+			Order: l.Order, Title: l.Title, Completed: l.Completed,
+			ClassOrder: l.ClassOrder, ClassTitle: l.ClassTitle,
+		}
 	}
 
 	httpkit.WriteJSON(w, http.StatusOK, response)
@@ -95,10 +103,11 @@ type ContentResponse struct {
 }
 
 type detailResponse struct {
-	Order     int               `json:"order"`
-	Title     string            `json:"title"`
-	Completed bool              `json:"completed"`
-	Content   []ContentResponse `json:"content"`
+	Order      int               `json:"order"`
+	Title      string            `json:"title"`
+	Completed  bool              `json:"completed"`
+	ClassTitle *string           `json:"classTitle,omitempty"`
+	Content    []ContentResponse `json:"content"`
 }
 
 // Detail devuelve una lección puntual (identificada por su orden dentro
@@ -156,10 +165,11 @@ func (h *LessonHandler) Detail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpkit.WriteJSON(w, http.StatusOK, detailResponse{
-		Order:     lesson.OrderIndex,
-		Title:     lesson.Title,
-		Completed: completed,
-		Content:   contentResponse,
+		Order:      lesson.OrderIndex,
+		Title:      lesson.Title,
+		Completed:  completed,
+		ClassTitle: lesson.ClassTitle,
+		Content:    contentResponse,
 	})
 }
 

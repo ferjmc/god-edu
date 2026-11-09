@@ -22,7 +22,8 @@ import (
 // la API.
 const uniqueViolation = "23505"
 
-// Repository implementa domain.Repository contra lessons y lesson_content.
+// Repository implementa domain.Repository contra lessons, lesson_content y
+// course_classes.
 // Van juntas en la misma implementación porque casi nunca se consultan por
 // separado: el contenido de una lección no tiene sentido sin la lección, y
 // viceversa. Los errores "no encontrado"/"ya existe" siguen siendo
@@ -38,15 +39,26 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
+// lessonColumns asume los alias l (lessons) y cc (LEFT JOIN course_classes)
+// y va en el mismo orden que lee scanLesson.
+const lessonColumns = `l.id, l.course_id, l.class_id, cc.order_index, cc.title, l.title, l.order_index, l.created_at`
+
+func scanLesson(row pgx.Row) (domain.Lesson, error) {
+	var l domain.Lesson
+	err := row.Scan(&l.ID, &l.CourseID, &l.ClassID, &l.ClassOrder, &l.ClassTitle, &l.Title, &l.OrderIndex, &l.CreatedAt)
+	return l, err
+}
+
 // ListByCourse devuelve la currícula de un curso: todas sus lecciones en
 // orden, con el estado de completado del usuario dado. El LEFT JOIN es a
 // propósito: un usuario sin ninguna fila en lesson_progress todavía tiene
 // que ver la lista completa, solo que con completed = false en todas.
 func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) ([]domain.LessonSummary, error) {
 	const q = `
-		SELECT l.order_index, l.title, COALESCE(lp.completed, false)
+		SELECT l.order_index, l.title, COALESCE(lp.completed, false), cc.order_index, cc.title
 		FROM lessons l
 		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $2
+		LEFT JOIN course_classes cc ON cc.id = l.class_id
 		WHERE l.course_id = $1
 		ORDER BY l.order_index
 	`
@@ -59,7 +71,7 @@ func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) (
 	var lessons []domain.LessonSummary
 	for rows.Next() {
 		var l domain.LessonSummary
-		if err := rows.Scan(&l.Order, &l.Title, &l.Completed); err != nil {
+		if err := rows.Scan(&l.Order, &l.Title, &l.Completed, &l.ClassOrder, &l.ClassTitle); err != nil {
 			return nil, fmt.Errorf("lesson: leyendo lección del curso %d: %w", courseID, err)
 		}
 		lessons = append(lessons, l)
@@ -78,10 +90,11 @@ func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) (
 // que preguntarle).
 func (r *Repository) ListAllByCourse(ctx context.Context, courseID int64) ([]domain.Lesson, error) {
 	const q = `
-		SELECT id, course_id, title, order_index, created_at
-		FROM lessons
-		WHERE course_id = $1
-		ORDER BY order_index
+		SELECT ` + lessonColumns + `
+		FROM lessons l
+		LEFT JOIN course_classes cc ON cc.id = l.class_id
+		WHERE l.course_id = $1
+		ORDER BY l.order_index
 	`
 	rows, err := r.pool.Query(ctx, q, courseID)
 	if err != nil {
@@ -91,8 +104,8 @@ func (r *Repository) ListAllByCourse(ctx context.Context, courseID int64) ([]dom
 
 	var lessons []domain.Lesson
 	for rows.Next() {
-		var l domain.Lesson
-		if err := rows.Scan(&l.ID, &l.CourseID, &l.Title, &l.OrderIndex, &l.CreatedAt); err != nil {
+		l, err := scanLesson(rows)
+		if err != nil {
 			return nil, fmt.Errorf("lesson: leyendo lección del curso %d: %w", courseID, err)
 		}
 		lessons = append(lessons, l)
@@ -110,13 +123,12 @@ func (r *Repository) ListAllByCourse(ctx context.Context, courseID int64) ([]dom
 // ni depender de que cada lección tenga un slug propio.
 func (r *Repository) GetByCourseAndOrder(ctx context.Context, courseID int64, order int) (domain.Lesson, error) {
 	const q = `
-		SELECT id, course_id, title, order_index, created_at
-		FROM lessons
-		WHERE course_id = $1 AND order_index = $2
+		SELECT ` + lessonColumns + `
+		FROM lessons l
+		LEFT JOIN course_classes cc ON cc.id = l.class_id
+		WHERE l.course_id = $1 AND l.order_index = $2
 	`
-	var l domain.Lesson
-	err := r.pool.QueryRow(ctx, q, courseID, order).
-		Scan(&l.ID, &l.CourseID, &l.Title, &l.OrderIndex, &l.CreatedAt)
+	l, err := scanLesson(r.pool.QueryRow(ctx, q, courseID, order))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Lesson{}, db.ErrNotFound
@@ -257,11 +269,11 @@ func (r *Repository) ListActivityByUser(ctx context.Context, userID int64) ([]do
 // lecciones no pueden pelear por el mismo lugar en la currícula).
 func (r *Repository) CreateLesson(ctx context.Context, l domain.Lesson) (domain.Lesson, error) {
 	const q = `
-		INSERT INTO lessons (course_id, title, order_index)
-		VALUES ($1, $2, $3)
+		INSERT INTO lessons (course_id, class_id, title, order_index)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at
 	`
-	err := r.pool.QueryRow(ctx, q, l.CourseID, l.Title, l.OrderIndex).Scan(&l.ID, &l.CreatedAt)
+	err := r.pool.QueryRow(ctx, q, l.CourseID, l.ClassID, l.Title, l.OrderIndex).Scan(&l.ID, &l.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -270,6 +282,116 @@ func (r *Repository) CreateLesson(ctx context.Context, l domain.Lesson) (domain.
 		return domain.Lesson{}, fmt.Errorf("lesson: creando lección: %w", err)
 	}
 	return l, nil
+}
+
+// SetLessonClass asigna una lección a una clase (o la deja sin clase si
+// classID es nil). No valida que la clase sea del mismo curso — eso lo
+// garantiza lessonapp.Service, que solo resuelve clases dentro del curso
+// de la lección.
+func (r *Repository) SetLessonClass(ctx context.Context, lessonID int64, classID *int64) error {
+	const q = `UPDATE lessons SET class_id = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, classID, lessonID)
+	if err != nil {
+		return fmt.Errorf("lesson: asignando clase a lección %d: %w", lessonID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
+// ListClasses devuelve las clases de un curso en orden.
+func (r *Repository) ListClasses(ctx context.Context, courseID int64) ([]domain.Class, error) {
+	const q = `
+		SELECT id, course_id, title, order_index, created_at
+		FROM course_classes
+		WHERE course_id = $1
+		ORDER BY order_index
+	`
+	rows, err := r.pool.Query(ctx, q, courseID)
+	if err != nil {
+		return nil, fmt.Errorf("lesson: listando clases del curso %d: %w", courseID, err)
+	}
+	defer rows.Close()
+
+	var classes []domain.Class
+	for rows.Next() {
+		var c domain.Class
+		if err := rows.Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("lesson: leyendo clase del curso %d: %w", courseID, err)
+		}
+		classes = append(classes, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lesson: iterando clases del curso %d: %w", courseID, err)
+	}
+	return classes, nil
+}
+
+// GetClassByCourseAndOrder busca una clase por curso + order_index — mismo
+// esquema de identificador público que las lecciones.
+func (r *Repository) GetClassByCourseAndOrder(ctx context.Context, courseID int64, order int) (domain.Class, error) {
+	const q = `
+		SELECT id, course_id, title, order_index, created_at
+		FROM course_classes
+		WHERE course_id = $1 AND order_index = $2
+	`
+	var c domain.Class
+	err := r.pool.QueryRow(ctx, q, courseID, order).
+		Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Class{}, db.ErrNotFound
+		}
+		return domain.Class{}, fmt.Errorf("lesson: leyendo clase %d/%d: %w", courseID, order, err)
+	}
+	return c, nil
+}
+
+// CreateClass inserta una clase bajo un curso. Devuelve db.ErrConflict si
+// el order_index ya está usado en el curso.
+func (r *Repository) CreateClass(ctx context.Context, c domain.Class) (domain.Class, error) {
+	const q = `
+		INSERT INTO course_classes (course_id, title, order_index)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at
+	`
+	err := r.pool.QueryRow(ctx, q, c.CourseID, c.Title, c.OrderIndex).Scan(&c.ID, &c.CreatedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return domain.Class{}, db.ErrConflict
+		}
+		return domain.Class{}, fmt.Errorf("lesson: creando clase: %w", err)
+	}
+	return c, nil
+}
+
+// UpdateClassTitle renombra una clase.
+func (r *Repository) UpdateClassTitle(ctx context.Context, classID int64, title string) error {
+	const q = `UPDATE course_classes SET title = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, title, classID)
+	if err != nil {
+		return fmt.Errorf("lesson: renombrando clase %d: %w", classID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteClass borra una clase. Sus lecciones no se borran: quedan sin
+// clase por el ON DELETE SET NULL de lessons.class_id.
+func (r *Repository) DeleteClass(ctx context.Context, classID int64) error {
+	const q = `DELETE FROM course_classes WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, classID)
+	if err != nil {
+		return fmt.Errorf("lesson: borrando clase %d: %w", classID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
 }
 
 // CreateContent inserta una pieza de contenido bajo una lección. Igual que

@@ -62,7 +62,7 @@ export default function AdminUserDetailModal({ user, roleLabel, onVerifiedChange
 				if (!ignore) setActivity(data);
 			})
 			.catch((err) => {
-				if (!ignore) setActivityError(err instanceof ApiError ? err.message : "No pudimos cargar las lecciones.");
+				if (!ignore) setActivityError(err instanceof ApiError ? err.message : "No pudimos cargar las sesiones.");
 			});
 		return () => {
 			ignore = true;
@@ -139,16 +139,16 @@ export default function AdminUserDetailModal({ user, roleLabel, onVerifiedChange
 					)}
 				</div>
 
-				<h3 className="mt-8 font-display text-xl text-marian-blue-deep">Lecciones vistas</h3>
+				<h3 className="mt-8 font-display text-xl text-marian-blue-deep">Sesiones vistas</h3>
 				<div className="mt-3">
 					{activityError ? (
 						<p role="alert" className="font-ui text-sm text-sacred-red">
 							{activityError}
 						</p>
 					) : !activity ? (
-						<span className="loading loading-spinner loading-md text-marian-blue" aria-label="Cargando lecciones" />
+						<span className="loading loading-spinner loading-md text-marian-blue" aria-label="Cargando sesiones" />
 					) : groups.length === 0 ? (
-						<p className="font-ui text-sm text-ink-60">Este usuario todavía no abrió ninguna lección.</p>
+						<p className="font-ui text-sm text-ink-60">Este usuario todavía no abrió ninguna sesión.</p>
 					) : (
 						<div className="flex flex-col gap-5">
 							{groups.map((group) => (

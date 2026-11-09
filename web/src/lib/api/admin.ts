@@ -54,15 +54,24 @@ export type AdminLessonContent = {
 	body?: string;
 };
 
-/** Mirrors handlers.adminLessonResponse. */
+/** Mirrors adminLessonResponse — una "sesión". `classOrder` falta si no
+ * está en ninguna clase. */
 export type AdminLesson = {
 	order: number;
 	title: string;
+	classOrder?: number;
 	content: AdminLessonContent[];
 };
 
-/** Mirrors handlers.adminCourseDetailResponse. */
+/** Mirrors adminClassResponse. */
+export type AdminClass = {
+	order: number;
+	title: string;
+};
+
+/** Mirrors adminCourseDetailResponse. */
 export type AdminCourseDetail = AdminCourse & {
+	classes: AdminClass[];
 	lessons: AdminLesson[];
 };
 
@@ -79,6 +88,7 @@ export async function getAdminCourse(slug: string): Promise<AdminCourseDetail> {
 	const course = await apiFetch<AdminCourseDetail>(`/admin/courses/${slug}`);
 	return {
 		...course,
+		classes: course.classes ?? [],
 		lessons: (course.lessons ?? []).map((lesson) => ({ ...lesson, content: lesson.content ?? [] })),
 	};
 }
@@ -109,15 +119,38 @@ export function deleteCourse(slug: string): Promise<void> {
 	return apiFetch<void>(`/admin/courses/${slug}`, { method: "DELETE" });
 }
 
-export function createLesson(slug: string, input: { title: string; order: number }): Promise<{ order: number; title: string }> {
+export function createClass(slug: string, input: { title: string; order: number }): Promise<AdminClass> {
+	return apiFetch(`/admin/courses/${slug}/classes`, { method: "POST", body: input });
+}
+
+export function updateClass(slug: string, order: number, title: string): Promise<AdminClass> {
+	return apiFetch(`/admin/courses/${slug}/classes/${order}`, { method: "PUT", body: { title } });
+}
+
+/** Borra la clase. Sus sesiones (con su contenido y el progreso de los
+ * alumnos) no se borran: quedan sin clase. */
+export function deleteClass(slug: string, order: number): Promise<void> {
+	return apiFetch(`/admin/courses/${slug}/classes/${order}`, { method: "DELETE" });
+}
+
+/** `classOrder` null = sin clase. */
+export function createLesson(
+	slug: string,
+	input: { title: string; order: number; classOrder: number | null },
+): Promise<{ order: number; title: string }> {
 	return apiFetch(`/admin/courses/${slug}/lessons`, { method: "POST", body: input });
 }
 
-export function updateLesson(slug: string, order: number, title: string): Promise<{ order: number; title: string }> {
-	return apiFetch(`/admin/courses/${slug}/lessons/${order}`, { method: "PUT", body: { title } });
+/** Renombra la sesión y la asigna a `classOrder` (null = sin clase). */
+export function updateLesson(
+	slug: string,
+	order: number,
+	input: { title: string; classOrder: number | null },
+): Promise<{ order: number; title: string }> {
+	return apiFetch(`/admin/courses/${slug}/lessons/${order}`, { method: "PUT", body: input });
 }
 
-/** Borra la lección completa (cascada: su contenido y el progreso de los
+/** Borra la sesión completa (cascada: su contenido y el progreso de los
  * usuarios sobre ella). No hay vuelta atrás. */
 export function deleteLesson(slug: string, order: number): Promise<void> {
 	return apiFetch(`/admin/courses/${slug}/lessons/${order}`, { method: "DELETE" });

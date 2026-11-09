@@ -4,6 +4,7 @@ import { marked } from "marked";
 import { $auth, initAuth } from "../stores/auth";
 import {
 	getLesson,
+	groupByClass,
 	listLessons,
 	markLessonComplete,
 	type LessonDetail as LessonDetailData,
@@ -44,7 +45,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 				setCurriculum(curriculumData);
 			})
 			.catch((err) =>
-				setError(err instanceof ApiError && err.status === 404 ? "No encontramos esa lección." : "No pudimos cargar la lección."),
+				setError(err instanceof ApiError && err.status === 404 ? "No encontramos esa sesión." : "No pudimos cargar la sesión."),
 			);
 	}, [auth.status, courseSlug, lessonNumber]);
 
@@ -70,7 +71,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 		}
 	}
 
-	/** "Siguiente lección" también registra el progreso de la lección actual
+	/** "Siguiente sesión" también registra el progreso de la lección actual
 	 * antes de navegar, así avanzar sirve como señal de "la terminé" sin
 	 * necesitar el botón manual. Si el POST falla, no navega — mismo criterio
 	 * que "Marcar como completada": mejor avisar que perder el dato en
@@ -99,7 +100,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 	if (auth.status === "anonymous") {
 		return (
 			<div className="flex flex-col items-start gap-4 rounded-[4px] border border-ink-15 bg-paper p-8">
-				<p className="font-serif text-ink-80">Iniciá sesión o creá una cuenta para ver esta lección.</p>
+				<p className="font-serif text-ink-80">Iniciá sesión o creá una cuenta para ver esta sesión.</p>
 				<div className="flex gap-3">
 					<a href="/ingresar" className="btn btn-outline">
 						Ingresar
@@ -121,14 +122,14 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 	}
 
 	if (!lesson || !curriculum) {
-		return <span className="loading loading-spinner loading-md text-marian-blue" aria-label="Cargando lección" />;
+		return <span className="loading loading-spinner loading-md text-marian-blue" aria-label="Cargando sesión" />;
 	}
 
 	const video = lesson.content.find((item) => item.type === "video");
 	const pdfs = lesson.content.filter((item) => item.type === "pdf");
 	const markdownItems = lesson.content.filter((item) => item.type === "markdown");
 	const embedUrl = video?.youtubeUrl ? toYoutubeEmbedUrl(video.youtubeUrl) : null;
-	// "Siguiente lección" prioriza la próxima pendiente hacia adelante — no
+	// "Siguiente sesión" prioriza la próxima pendiente hacia adelante — no
 	// simplemente order + 1 — porque no hay bloqueo secuencial (ver
 	// LessonHandler en /api) y alguien pudo haber navegado fuera de orden.
 	// Si ya completó todo lo que sigue, cae a cualquier otra pendiente que
@@ -136,6 +137,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 	const nextLesson =
 		curriculum.find((item) => item.order > lessonNumber && !item.completed) ??
 		curriculum.find((item) => item.order !== lessonNumber && !item.completed);
+	const groups = groupByClass(curriculum);
 
 	return (
 		<div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_320px] lg:items-start">
@@ -162,7 +164,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 				<div className="flex flex-wrap items-start justify-between gap-4">
 					<div>
 						<span className="font-ui text-xs font-semibold tracking-[0.14em] text-marian-blue uppercase">
-							Lección {lesson.order}
+							{lesson.classTitle ? `${lesson.classTitle} · ` : ""}Sesión {lesson.order}
 						</span>
 						<h1 className="mt-2 font-display text-3xl text-marian-blue-deep sm:text-4xl">{lesson.title}</h1>
 					</div>
@@ -219,7 +221,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 				)}
 
 				{lesson.content.length === 0 && (
-					<p className="font-serif text-ink-60">Todavía no hay contenido cargado para esta lección.</p>
+					<p className="font-serif text-ink-60">Todavía no hay contenido cargado para esta sesión.</p>
 				)}
 			</article>
 
@@ -227,33 +229,44 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 			<aside className="rounded-[4px] border border-ink-15 bg-paper p-6 shadow-gold-edge lg:sticky lg:top-20">
 				<h2 className="font-display text-lg font-semibold text-marian-blue-deep">Currícula del curso</h2>
 
-				<ol className="mt-5 flex flex-col gap-1">
-					{curriculum.map((item) => {
-						const isViewing = item.order === lessonNumber;
-						return (
-							<li key={item.order}>
-								<a
-									href={`/cursos/${courseSlug}/${item.order}`}
-									className={`flex items-center gap-3 rounded-[4px] px-3 py-2.5 transition-colors ${
-										isViewing ? "bg-marian-blue-deep text-mercy-white" : "text-ink-80 hover:bg-paper-warm"
-									}`}
-								>
-									{item.completed ? (
-										<CheckCircleIcon className="h-4.5 w-4.5 shrink-0 text-liturgical-gold" />
-									) : (
-										<span
-											className={`h-4.5 w-4.5 shrink-0 rounded-full border ${isViewing ? "border-mercy-white" : "border-current"}`}
-											aria-hidden="true"
-										/>
-									)}
-									<p className={`font-ui text-sm leading-snug ${isViewing ? "font-semibold" : ""}`}>
-										{item.order}. {item.title}
-									</p>
-								</a>
-							</li>
-						);
-					})}
-				</ol>
+				<div className="mt-5 flex flex-col gap-4">
+					{groups.map((group) => (
+						<div key={group.classOrder ?? "sin-clase"}>
+							{(group.classOrder !== null || groups.length > 1) && (
+								<h3 className="mb-1 px-3 font-ui text-xs font-semibold tracking-[0.1em] text-ink-60 uppercase">
+									{group.title ?? "Otras sesiones"}
+								</h3>
+							)}
+							<ol className="flex flex-col gap-1">
+								{group.lessons.map((item) => {
+									const isViewing = item.order === lessonNumber;
+									return (
+										<li key={item.order}>
+											<a
+												href={`/cursos/${courseSlug}/${item.order}`}
+												className={`flex items-center gap-3 rounded-[4px] px-3 py-2.5 transition-colors ${
+													isViewing ? "bg-marian-blue-deep text-mercy-white" : "text-ink-80 hover:bg-paper-warm"
+												}`}
+											>
+												{item.completed ? (
+													<CheckCircleIcon className="h-4.5 w-4.5 shrink-0 text-liturgical-gold" />
+												) : (
+													<span
+														className={`h-4.5 w-4.5 shrink-0 rounded-full border ${isViewing ? "border-mercy-white" : "border-current"}`}
+														aria-hidden="true"
+													/>
+												)}
+												<p className={`font-ui text-sm leading-snug ${isViewing ? "font-semibold" : ""}`}>
+													{item.order}. {item.title}
+												</p>
+											</a>
+										</li>
+									);
+								})}
+							</ol>
+						</div>
+					))}
+				</div>
 
 				{nextLesson && (
 					<button
@@ -262,7 +275,7 @@ export default function LessonDetail({ courseSlug, lessonNumber }: Props) {
 						disabled={advancing}
 						className="btn btn-primary mt-5 w-full"
 					>
-						{advancing ? "Guardando…" : "Siguiente lección →"}
+						{advancing ? "Guardando…" : "Siguiente sesión →"}
 					</button>
 				)}
 			</aside>

@@ -116,14 +116,22 @@ type contentResponse struct {
 
 // adminLessonResponse es una lección con su contenido completo, tal como
 // la necesita la pantalla de edición del panel admin.
+// ClassOrder se omite si la lección no está en ninguna clase.
 type adminLessonResponse struct {
-	Order   int               `json:"order"`
-	Title   string            `json:"title"`
-	Content []contentResponse `json:"content"`
+	Order      int               `json:"order"`
+	Title      string            `json:"title"`
+	ClassOrder *int              `json:"classOrder,omitempty"`
+	Content    []contentResponse `json:"content"`
+}
+
+type adminClassResponse struct {
+	Order int    `json:"order"`
+	Title string `json:"title"`
 }
 
 type adminCourseDetailResponse struct {
 	adminCourseResponse
+	Classes []adminClassResponse  `json:"classes"`
 	Lessons []adminLessonResponse `json:"lessons"`
 }
 
@@ -173,14 +181,27 @@ func (h *AdminHandler) CourseDetail(w http.ResponseWriter, r *http.Request) {
 		}
 
 		lessonsResponse[i] = adminLessonResponse{
-			Order:   l.OrderIndex,
-			Title:   l.Title,
-			Content: contentRes,
+			Order:      l.OrderIndex,
+			Title:      l.Title,
+			ClassOrder: l.ClassOrder,
+			Content:    contentRes,
 		}
+	}
+
+	classes, err := h.Lessons.ListClasses(r.Context(), course.ID)
+	if err != nil {
+		log.Printf("admin: listando clases del curso %d: %v", course.ID, err)
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener las clases")
+		return
+	}
+	classesResponse := make([]adminClassResponse, len(classes))
+	for i, c := range classes {
+		classesResponse[i] = adminClassResponse{Order: c.OrderIndex, Title: c.Title}
 	}
 
 	httpkit.WriteJSON(w, http.StatusOK, adminCourseDetailResponse{
 		adminCourseResponse: toAdminCourseResponse(course),
+		Classes:             classesResponse,
 		Lessons:             lessonsResponse,
 	})
 }

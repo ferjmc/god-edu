@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@nanostores/react";
 import { $auth, initAuth } from "../stores/auth";
 import { getCourse, enrollInCourse, type Course } from "../lib/api/courses";
-import { listLessons, type LessonSummary } from "../lib/api/lessons";
+import { groupByClass, listLessons, type LessonSummary } from "../lib/api/lessons";
 import { ApiError } from "../lib/api/client";
 import { CheckCircleIcon } from "./icons";
 
@@ -44,7 +44,7 @@ export default function CourseDetail({ slug }: Props) {
 				if (!courseData.enrolled) return;
 				return listLessons(slug)
 					.then(setLessons)
-					.catch((err) => setLessonsError(err instanceof ApiError ? err.message : "No pudimos cargar las lecciones."));
+					.catch((err) => setLessonsError(err instanceof ApiError ? err.message : "No pudimos cargar las sesiones."));
 			})
 			.catch((err) => setError(err instanceof ApiError ? err.message : "No pudimos cargar el curso."));
 	}, [auth.status, slug]);
@@ -58,9 +58,9 @@ export default function CourseDetail({ slug }: Props) {
 				setLessons(await listLessons(slug));
 			} catch (err) {
 				// La inscripción ya se completó (setCourse de arriba lo refleja) —
-				// esto es solo que la lista de capítulos no cargó, no un fallo de
+				// esto es solo que la lista de sesiones no cargó, no un fallo de
 				// la inscripción en sí.
-				setLessonsError(err instanceof ApiError ? err.message : "Te inscribiste, pero no pudimos cargar los capítulos.");
+				setLessonsError(err instanceof ApiError ? err.message : "Te inscribiste, pero no pudimos cargar las sesiones.");
 			}
 		} catch (err) {
 			setError(err instanceof ApiError ? err.message : "No se pudo completar la inscripción.");
@@ -108,6 +108,7 @@ export default function CourseDetail({ slug }: Props) {
 	// seguir (mismo dato que ya usa CourseProgressCard para el CTA).
 	const nextPendingOrder = lessons?.find((l) => !l.completed)?.order;
 	const completedCount = lessons?.filter((l) => l.completed).length ?? 0;
+	const groups = lessons ? groupByClass(lessons) : [];
 
 	return (
 		<article>
@@ -120,7 +121,7 @@ export default function CourseDetail({ slug }: Props) {
 				<div className="mt-6 flex flex-wrap items-center gap-3">
 					{course.enrolled && lessons && (
 						<span className="font-ui text-xs text-ink-60">
-							{completedCount}/{lessons.length} lecciones completadas
+							{completedCount}/{lessons.length} sesiones completadas
 						</span>
 					)}
 					{course.certificateEnabled && (
@@ -150,34 +151,50 @@ export default function CourseDetail({ slug }: Props) {
 				lessons &&
 				lessons.length > 0 && (
 					<div className="mt-10">
-						<h2 className="font-display text-xl font-semibold text-marian-blue-deep">Capítulos</h2>
-						<ol className="mt-4 flex flex-col gap-1">
-							{lessons.map((lesson) => {
-								const isNext = lesson.order === nextPendingOrder;
-								return (
-									<li key={lesson.order}>
-										<a
-											href={`/cursos/${course.slug}/${lesson.order}`}
-											className={`flex items-center gap-3 rounded-[4px] border px-3 py-2.5 transition-colors hover:bg-paper-warm ${
-												isNext ? "border-liturgical-gold bg-paper-warm" : "border-transparent"
-											}`}
-										>
-											{lesson.completed ? (
-												<CheckCircleIcon className="h-5 w-5 shrink-0 text-liturgical-gold" />
-											) : (
-												<span className="h-5 w-5 shrink-0 rounded-full border border-current" aria-hidden="true" />
-											)}
-											<span className="flex-1 font-ui text-sm text-ink-80">
-												{lesson.order}. {lesson.title}
+						<h2 className="font-display text-xl font-semibold text-marian-blue-deep">
+							{groups.some((g) => g.classOrder !== null) ? "Clases" : "Sesiones"}
+						</h2>
+						<div className="mt-4 flex flex-col gap-6">
+							{groups.map((group) => (
+								<section key={group.classOrder ?? "sin-clase"}>
+									{(group.classOrder !== null || groups.length > 1) && (
+										<div className="mb-2 flex items-baseline justify-between gap-3 border-b border-ink-15 pb-1.5">
+											<h3 className="font-display text-lg font-semibold text-ink">{group.title ?? "Otras sesiones"}</h3>
+											<span className="shrink-0 font-ui text-xs text-ink-60">
+												{group.lessons.filter((l) => l.completed).length}/{group.lessons.length} sesiones
 											</span>
-											{isNext && (
-												<span className="font-ui text-xs font-semibold text-marian-blue">Continuar acá →</span>
-											)}
-										</a>
-									</li>
-								);
-							})}
-						</ol>
+										</div>
+									)}
+									<ol className="flex flex-col gap-1">
+										{group.lessons.map((lesson) => {
+											const isNext = lesson.order === nextPendingOrder;
+											return (
+												<li key={lesson.order}>
+													<a
+														href={`/cursos/${course.slug}/${lesson.order}`}
+														className={`flex items-center gap-3 rounded-[4px] border px-3 py-2.5 transition-colors hover:bg-paper-warm ${
+															isNext ? "border-liturgical-gold bg-paper-warm" : "border-transparent"
+														}`}
+													>
+														{lesson.completed ? (
+															<CheckCircleIcon className="h-5 w-5 shrink-0 text-liturgical-gold" />
+														) : (
+															<span className="h-5 w-5 shrink-0 rounded-full border border-current" aria-hidden="true" />
+														)}
+														<span className="flex-1 font-ui text-sm text-ink-80">
+															Sesión {lesson.order}. {lesson.title}
+														</span>
+														{isNext && (
+															<span className="font-ui text-xs font-semibold text-marian-blue">Continuar acá →</span>
+														)}
+													</a>
+												</li>
+											);
+										})}
+									</ol>
+								</section>
+							))}
+						</div>
 					</div>
 				)
 			)}

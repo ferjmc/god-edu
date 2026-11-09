@@ -44,7 +44,8 @@ Tablas mínimas para el MVP:
 
 - `users`: id, email, password_hash (nullable si vino por OAuth), name, auth_provider (email/google/facebook), created_at.
 - `courses`: id, title, slug, description, published (bool), created_at.
-- `lessons`: id, course_id (FK), title, order_index, created_at.
+- `course_classes`: id, course_id (FK), title, order_index, created_at. Agrupa sesiones dentro de un curso (jerarquía curso → clase → sesión → contenido). No tiene progreso propio: el avance de una clase se calcula a partir de sus sesiones.
+- `lessons`: id, course_id (FK), class_id (FK nullable a `course_classes`, `ON DELETE SET NULL`), title, order_index, created_at. En la interfaz se llama **"sesión"**, pero en la base y en el código Go/TS sigue siendo `lesson` (no se renombró a propósito, para no hacer un refactor amplio). Sigue siendo la unidad de progreso (`lesson_progress`) y de certificados, y cuelga del curso además de la clase: `order_index` es correlativo en todo el curso (no se reinicia por clase) y es el identificador de la URL `/cursos/{slug}/{orden}`. `class_id` nulo = sesión sin clase (cursos anteriores a la migración 000008 siguen funcionando así). Que la clase sea del mismo curso lo garantiza `lessonapp.Service` (resuelve la clase por `(course_id, order_index)`), no un constraint.
 - `lesson_content`: id, lesson_id (FK), title, order_index, content_type, youtube_url, pdf_url (R2), created_at
 - `enrollments`: id, user_id (FK), course_id (FK), enrolled_at. Se usa de verdad desde la etapa de certificados: se crea con una acción explícita del alumno ("Inscribirme" en el detalle del curso), no automáticamente. Sigue sin gatear acceso — el acceso a un curso sigue siendo 100% por rol (`course_visible_roles`); enrollment es tracking (para saber quién toma qué curso y desde cuándo) y la base para poder sumar precio/pasarela de pago en una etapa futura.
 - `lesson_progress`: id, user_id (FK), lesson_id (FK), completed (bool), completed_at.

@@ -59,8 +59,9 @@ func ToContentResponse(c domain.LessonContent) ContentResponse {
 // --- Crear lección ---
 
 type createLessonRequest struct {
-	Title string `json:"title"`
-	Order int    `json:"order"`
+	Title      string `json:"title"`
+	Order      int    `json:"order"`
+	ClassOrder *int   `json:"classOrder"` // opcional: sin clase si no viene
 }
 
 // CreateLesson agrega una lección a un curso (existente o en borrador —
@@ -98,10 +99,13 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		CourseID:   course.ID,
 		Title:      req.Title,
 		OrderIndex: req.Order,
-	})
+	}, req.ClassOrder)
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
 			httpkit.WriteError(w, http.StatusConflict, "ya existe una lección con ese order en este curso")
+			return
+		}
+		if httpkit.HandleNotFound(w, err, "clase no encontrada en este curso") {
 			return
 		}
 		log.Printf("admin: creando lección en curso %d: %v", course.ID, err)
@@ -109,17 +113,34 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpkit.WriteJSON(w, http.StatusCreated, summaryResponse{Order: lesson.OrderIndex, Title: lesson.Title})
+	httpkit.WriteJSON(w, http.StatusCreated, summaryResponse{
+		Order: lesson.OrderIndex, Title: lesson.Title, ClassOrder: req.ClassOrder,
+	})
 }
 
 // --- Editar / borrar lección ---
 
 type updateLessonRequest struct {
-	Title string `json:"title"`
+	Title      string      `json:"title"`
+	ClassOrder optionalInt `json:"classOrder"`
 }
 
-// UpdateLesson renombra una lección. El orden no se puede tocar por acá —
-// ver lessonpg.Repository.UpdateTitle.
+// optionalInt distingue un campo JSON ausente (Set == false: no tocar) de
+// uno explícitamente null (Set == true, Value == nil: sin clase).
+// encoding/json solo llama a UnmarshalJSON si la clave está presente.
+type optionalInt struct {
+	Set   bool
+	Value *int
+}
+
+func (o *optionalInt) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	return json.Unmarshal(data, &o.Value)
+}
+
+// UpdateLesson renombra una lección y, si el body trae classOrder, la mueve
+// de clase (null = sin clase). El orden no se puede tocar por acá — ver
+// lessonpg.Repository.UpdateTitle.
 func (h *AdminHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 	lesson, ok := h.resolveLesson(w, r)
 	if !ok {
@@ -146,7 +167,20 @@ func (h *AdminHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpkit.WriteJSON(w, http.StatusOK, summaryResponse{Order: lesson.OrderIndex, Title: req.Title})
+	classOrder := lesson.ClassOrder
+	if req.ClassOrder.Set {
+		if err := h.Lessons.SetLessonClass(r.Context(), lesson, req.ClassOrder.Value); err != nil {
+			if httpkit.HandleNotFound(w, err, "clase no encontrada en este curso") {
+				return
+			}
+			log.Printf("admin: cambiando clase de lección %d: %v", lesson.ID, err)
+			httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo cambiar la clase de la lección")
+			return
+		}
+		classOrder = req.ClassOrder.Value
+	}
+
+	httpkit.WriteJSON(w, http.StatusOK, summaryResponse{Order: lesson.OrderIndex, Title: req.Title, ClassOrder: classOrder})
 }
 
 // DeleteLesson borra una lección y, en cascada, su contenido y el progreso

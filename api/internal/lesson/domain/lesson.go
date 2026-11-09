@@ -8,10 +8,29 @@ import (
 	"time"
 )
 
-// Lesson es una lección dentro de un curso. El identificador público que
-// usa la URL (/cursos/{slug}/{orden}, ver frontend) es OrderIndex, no ID —
-// nadie necesita saber el id interno de una lección.
+// Lesson es una lección dentro de un curso — en la interfaz se llama
+// "sesión". El identificador público que usa la URL (/cursos/{slug}/{orden},
+// ver frontend) es OrderIndex, no ID — nadie necesita saber el id interno
+// de una lección. OrderIndex es correlativo en todo el curso, no se
+// reinicia por clase.
+//
+// ClassID es nil si la lección no está asignada a ninguna clase.
+// ClassOrder/ClassTitle son de solo lectura (vienen del join con
+// course_classes); para cambiar de clase se usa Service.SetLessonClass.
 type Lesson struct {
+	ID         int64
+	CourseID   int64
+	ClassID    *int64
+	ClassOrder *int
+	ClassTitle *string
+	Title      string
+	OrderIndex int
+	CreatedAt  time.Time
+}
+
+// Class agrupa lecciones de un curso. No tiene progreso propio: el avance
+// de una clase se calcula a partir de las lecciones que contiene.
+type Class struct {
 	ID         int64
 	CourseID   int64
 	Title      string
@@ -25,9 +44,11 @@ type Lesson struct {
 // una propiedad de la lección en sí — por eso vive aparte y lo arma
 // Repository.ListByCourse con el join a lesson_progress.
 type LessonSummary struct {
-	Order     int
-	Title     string
-	Completed bool
+	Order      int
+	Title      string
+	Completed  bool
+	ClassOrder *int
+	ClassTitle *string
 }
 
 // UserLessonActivity es una lección que un usuario puntual abrió y/o
@@ -98,8 +119,22 @@ type Repository interface {
 	// ListActivityByUser devuelve las lecciones que el usuario dado abrió
 	// o completó, ordenadas por curso y orden de lección.
 	ListActivityByUser(ctx context.Context, userID int64) ([]UserLessonActivity, error)
-	// CreateLesson inserta una lección nueva bajo un curso.
+	// CreateLesson inserta una lección nueva bajo un curso (con su ClassID,
+	// si tiene).
 	CreateLesson(ctx context.Context, l Lesson) (Lesson, error)
+	// SetLessonClass asigna una lección a una clase, o la deja sin clase si
+	// classID es nil.
+	SetLessonClass(ctx context.Context, lessonID int64, classID *int64) error
+	// ListClasses devuelve las clases de un curso en orden.
+	ListClasses(ctx context.Context, courseID int64) ([]Class, error)
+	// GetClassByCourseAndOrder busca una clase por curso + order_index.
+	GetClassByCourseAndOrder(ctx context.Context, courseID int64, order int) (Class, error)
+	// CreateClass inserta una clase nueva bajo un curso.
+	CreateClass(ctx context.Context, c Class) (Class, error)
+	// UpdateClassTitle renombra una clase.
+	UpdateClassTitle(ctx context.Context, classID int64, title string) error
+	// DeleteClass borra una clase; sus lecciones quedan sin clase.
+	DeleteClass(ctx context.Context, classID int64) error
 	// CreateContent inserta una pieza de contenido bajo una lección.
 	CreateContent(ctx context.Context, c LessonContent) (LessonContent, error)
 	// GetContentByLessonAndOrder busca una pieza de contenido puntual dentro

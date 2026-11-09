@@ -55,8 +55,58 @@ func (s *Service) ListActivityByUser(ctx context.Context, userID int64) ([]domai
 	return s.repo.ListActivityByUser(ctx, userID)
 }
 
-func (s *Service) CreateLesson(ctx context.Context, l domain.Lesson) (domain.Lesson, error) {
+// CreateLesson crea una lección, opcionalmente dentro de la clase con
+// order_index classOrder. La clase se busca siempre dentro de l.CourseID, así
+// que una lección nunca puede quedar colgada de una clase de otro curso —
+// si no existe ahí, devuelve db.ErrNotFound.
+func (s *Service) CreateLesson(ctx context.Context, l domain.Lesson, classOrder *int) (domain.Lesson, error) {
+	classID, err := s.resolveClassID(ctx, l.CourseID, classOrder)
+	if err != nil {
+		return domain.Lesson{}, err
+	}
+	l.ClassID = classID
 	return s.repo.CreateLesson(ctx, l)
+}
+
+// SetLessonClass mueve una lección a la clase con order_index classOrder
+// dentro de su mismo curso, o la deja sin clase si classOrder es nil.
+func (s *Service) SetLessonClass(ctx context.Context, l domain.Lesson, classOrder *int) error {
+	classID, err := s.resolveClassID(ctx, l.CourseID, classOrder)
+	if err != nil {
+		return err
+	}
+	return s.repo.SetLessonClass(ctx, l.ID, classID)
+}
+
+func (s *Service) resolveClassID(ctx context.Context, courseID int64, classOrder *int) (*int64, error) {
+	if classOrder == nil {
+		return nil, nil
+	}
+	c, err := s.repo.GetClassByCourseAndOrder(ctx, courseID, *classOrder)
+	if err != nil {
+		return nil, err
+	}
+	return &c.ID, nil
+}
+
+func (s *Service) ListClasses(ctx context.Context, courseID int64) ([]domain.Class, error) {
+	return s.repo.ListClasses(ctx, courseID)
+}
+
+func (s *Service) GetClassByCourseAndOrder(ctx context.Context, courseID int64, order int) (domain.Class, error) {
+	return s.repo.GetClassByCourseAndOrder(ctx, courseID, order)
+}
+
+func (s *Service) CreateClass(ctx context.Context, c domain.Class) (domain.Class, error) {
+	return s.repo.CreateClass(ctx, c)
+}
+
+func (s *Service) UpdateClassTitle(ctx context.Context, classID int64, title string) error {
+	return s.repo.UpdateClassTitle(ctx, classID, title)
+}
+
+func (s *Service) DeleteClass(ctx context.Context, classID int64) error {
+	return s.repo.DeleteClass(ctx, classID)
 }
 
 func (s *Service) CreateContent(ctx context.Context, c domain.LessonContent) (domain.LessonContent, error) {

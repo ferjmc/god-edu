@@ -119,7 +119,7 @@ export default function ContentManager({ slug, lessonOrder, content, onChange }:
 			)}
 
 			{content.length === 0 ? (
-				<p className="font-ui text-sm text-ink-60">Todavía no hay contenido en esta lección.</p>
+				<p className="font-ui text-sm text-ink-60">Todavía no hay contenido en esta sesión.</p>
 			) : (
 				<ul className="flex flex-col gap-2">
 					{content.map((item) => (

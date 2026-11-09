@@ -26,8 +26,8 @@ export default function AdminCourseEditor({ slug }: Props) {
 }
 
 /** Pantalla de edición completa de un curso: datos básicos, publicar/
- * despublicar, borrar, y la currícula (lecciones + contenido, delegado a
- * LessonManager). Gated por sesión + rol ADMIN, mismo patrón que
+ * despublicar, borrar, y la currícula (clases, sesiones y contenido,
+ * delegado a LessonManager). Gated por sesión + rol ADMIN, mismo patrón que
  * AdminCoursesList — la página es un shell estático, este island resuelve
  * todo client-side.
  *
@@ -129,7 +129,7 @@ function AdminCourseEditorContent({ slug }: Props) {
 	}
 
 	async function handleDelete() {
-		if (!window.confirm("¿Borrar este curso? Se van a borrar también sus lecciones y contenido. No hay vuelta atrás.")) return;
+		if (!window.confirm("¿Borrar este curso? Se van a borrar también sus clases, sesiones y contenido. No hay vuelta atrás.")) return;
 		setDeleting(true);
 		setDeleteError(null);
 		try {
@@ -250,7 +250,7 @@ function AdminCourseEditorContent({ slug }: Props) {
 				</button>
 			</form>
 
-			<LessonManager slug={slug} lessons={course.lessons} onChange={reloadAfterLessonChange} />
+			<LessonManager slug={slug} classes={course.classes} lessons={course.lessons} onChange={reloadAfterLessonChange} />
 		</div>
 	);
 }

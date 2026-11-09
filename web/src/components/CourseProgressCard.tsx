@@ -20,7 +20,7 @@ export default function CourseProgressCard({ course }: { course: CourseProgress 
 			<div className="mt-4">
 				<progress className="progress progress-primary w-full" value={course.completedLessons} max={Math.max(course.totalLessons, 1)} />
 				<p className="mt-1 font-ui text-xs text-ink-60">
-					{course.completedLessons}/{course.totalLessons} lecciones · {course.progressPercent}%
+					{course.completedLessons}/{course.totalLessons} sesiones · {course.progressPercent}%
 				</p>
 				{course.enrolledAt && (
 					<p className="mt-1 font-ui text-xs text-ink-60">Inscripto desde {formatLongDate(course.enrolledAt)}</p>

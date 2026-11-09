@@ -37,7 +37,7 @@ export async function getStaticPaths() {
 const { slug, leccion } = Astro.params;
 ---
 
-<Layout title="Lección — Comunidad La Divina Misericordia">
+<Layout title="Sesión — Comunidad La Divina Misericordia">
 	<main class="mx-auto max-w-[1180px] px-6 py-16">
 		<LessonDetail courseSlug={slug} lessonNumber={Number(leccion)} client:load />
 	</main>
