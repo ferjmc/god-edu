@@ -1,0 +1,21 @@
+# robots.txt — Comunidad La Divina Misericordia
+#
+# Crawl hints only. This file is not access control: private data is
+# protected by the API, not by the rules below.
+#
+# AI agents and crawlers are welcome on the public pages. A short,
+# machine-readable description of the site lives at /llms.txt.
+
+User-agent: *
+Allow: /
+
+# Account and session pages: no public content, nothing worth indexing.
+Disallow: /admin/
+Disallow: /mis-cursos
+Disallow: /completar-perfil
+Disallow: /olvide-mi-contrasena
+Disallow: /reset-password
+Disallow: /verify-email
+
+# Certificate verification shows a person's name for a given code.
+Disallow: /certificados

@@ -1,0 +1,30 @@
+# Comunidad La Divina Misericordia
+
+> Plataforma de formación católica en línea de la Comunidad La Divina Misericordia, una asociación religiosa sin fines de lucro nacida en Charleston, Carolina del Sur. Ofrece cursos sobre la fe católica en video y material en PDF, organizados en lecciones breves que cada persona sigue a su ritmo.
+
+El sitio está en español. Las páginas institucionales son públicas. Para ver el contenido de las lecciones, registrar el progreso y obtener certificados se necesita una cuenta gratuita; algunos cursos están disponibles solo para ciertos miembros de la comunidad.
+
+## Páginas principales
+
+- [Inicio](https://cdmisericordia.org/): presentación de la comunidad y de lo que ofrece la plataforma.
+- [Cursos](https://cdmisericordia.org/cursos): catálogo de cursos de formación católica.
+- [Quiénes somos](https://cdmisericordia.org/quienes-somos): historia, misión y creencias de la comunidad.
+- [Eventos](https://cdmisericordia.org/eventos): encuentros y actividades de la comunidad.
+
+## Cuenta
+
+- [Crear cuenta](https://cdmisericordia.org/registro): registro con correo electrónico, Google o Facebook.
+- [Ingresar](https://cdmisericordia.org/ingresar): inicio de sesión.
+
+## Certificados
+
+- [Verificación de certificados](https://cdmisericordia.org/certificados): permite comprobar la autenticidad de un certificado con su código.
+
+## Legal
+
+- [Términos de uso](https://cdmisericordia.org/terminos)
+- [Política de privacidad](https://cdmisericordia.org/privacidad)
+
+## Contacto
+
+- Correo electrónico: divinamisericordia.chs@gmail.com
