@@ -43,6 +43,9 @@ func (f *fakeRepo) GetByID(ctx context.Context, id int64) (domain.User, error) {
 }
 
 func (f *fakeRepo) MarkEmailVerified(ctx context.Context, id int64) error { return nil }
+func (f *fakeRepo) SetEmailVerified(ctx context.Context, id int64, verified bool) error {
+	return nil
+}
 func (f *fakeRepo) UpdatePasswordHash(ctx context.Context, id int64, passwordHash string) error {
 	return nil
 }

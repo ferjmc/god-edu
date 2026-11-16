@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -58,8 +59,9 @@ func ToContentResponse(c domain.LessonContent) ContentResponse {
 // --- Crear lección ---
 
 type createLessonRequest struct {
-	Title string `json:"title"`
-	Order int    `json:"order"`
+	Title      string `json:"title"`
+	Order      int    `json:"order"`
+	ClassOrder *int   `json:"classOrder"` // opcional: sin clase si no viene
 }
 
 // CreateLesson agrega una lección a un curso (existente o en borrador —
@@ -97,10 +99,13 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		CourseID:   course.ID,
 		Title:      req.Title,
 		OrderIndex: req.Order,
-	})
+	}, req.ClassOrder)
 	if err != nil {
 		if errors.Is(err, db.ErrConflict) {
 			httpkit.WriteError(w, http.StatusConflict, "ya existe una lección con ese order en este curso")
+			return
+		}
+		if httpkit.HandleNotFound(w, err, "clase no encontrada en este curso") {
 			return
 		}
 		log.Printf("admin: creando lección en curso %d: %v", course.ID, err)
@@ -108,17 +113,34 @@ func (h *AdminHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpkit.WriteJSON(w, http.StatusCreated, summaryResponse{Order: lesson.OrderIndex, Title: lesson.Title})
+	httpkit.WriteJSON(w, http.StatusCreated, summaryResponse{
+		Order: lesson.OrderIndex, Title: lesson.Title, ClassOrder: req.ClassOrder,
+	})
 }
 
 // --- Editar / borrar lección ---
 
 type updateLessonRequest struct {
-	Title string `json:"title"`
+	Title      string      `json:"title"`
+	ClassOrder optionalInt `json:"classOrder"`
 }
 
-// UpdateLesson renombra una lección. El orden no se puede tocar por acá —
-// ver lessonpg.Repository.UpdateTitle.
+// optionalInt distingue un campo JSON ausente (Set == false: no tocar) de
+// uno explícitamente null (Set == true, Value == nil: sin clase).
+// encoding/json solo llama a UnmarshalJSON si la clave está presente.
+type optionalInt struct {
+	Set   bool
+	Value *int
+}
+
+func (o *optionalInt) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	return json.Unmarshal(data, &o.Value)
+}
+
+// UpdateLesson renombra una lección y, si el body trae classOrder, la mueve
+// de clase (null = sin clase). El orden no se puede tocar por acá — ver
+// lessonpg.Repository.UpdateTitle.
 func (h *AdminHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 	lesson, ok := h.resolveLesson(w, r)
 	if !ok {
@@ -145,7 +167,20 @@ func (h *AdminHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpkit.WriteJSON(w, http.StatusOK, summaryResponse{Order: lesson.OrderIndex, Title: req.Title})
+	classOrder := lesson.ClassOrder
+	if req.ClassOrder.Set {
+		if err := h.Lessons.SetLessonClass(r.Context(), lesson, req.ClassOrder.Value); err != nil {
+			if httpkit.HandleNotFound(w, err, "clase no encontrada en este curso") {
+				return
+			}
+			log.Printf("admin: cambiando clase de lección %d: %v", lesson.ID, err)
+			httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo cambiar la clase de la lección")
+			return
+		}
+		classOrder = req.ClassOrder.Value
+	}
+
+	httpkit.WriteJSON(w, http.StatusOK, summaryResponse{Order: lesson.OrderIndex, Title: req.Title, ClassOrder: classOrder})
 }
 
 // DeleteLesson borra una lección y, en cascada, su contenido y el progreso
@@ -468,6 +503,55 @@ func (h *AdminHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Actividad de un usuario ---
+
+type userLessonActivityResponse struct {
+	CourseSlug    string     `json:"courseSlug"`
+	CourseTitle   string     `json:"courseTitle"`
+	LessonOrder   int        `json:"lessonOrder"`
+	LessonTitle   string     `json:"lessonTitle"`
+	FirstViewedAt *time.Time `json:"firstViewedAt"`
+	LastViewedAt  *time.Time `json:"lastViewedAt"`
+	Completed     bool       `json:"completed"`
+	CompletedAt   *time.Time `json:"completedAt"`
+}
+
+// UserLessonActivity devuelve las lecciones que un usuario abrió o
+// completó (GET /admin/users/{id}/lessons). Vive en este dominio porque los
+// datos son de lesson, aunque la ruta cuelgue de /admin/users. Un usuario
+// inexistente devuelve [] y no 404: el panel ya conoce al usuario por la
+// lista, y no vale una consulta extra a users solo para distinguirlo.
+func (h *AdminHandler) UserLessonActivity(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "id de usuario inválido")
+		return
+	}
+
+	activity, err := h.Lessons.ListActivityByUser(r.Context(), userID)
+	if err != nil {
+		log.Printf("admin: listando actividad del usuario %d: %v", userID, err)
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudieron obtener las lecciones del usuario")
+		return
+	}
+
+	response := make([]userLessonActivityResponse, len(activity))
+	for i, a := range activity {
+		response[i] = userLessonActivityResponse{
+			CourseSlug:    a.CourseSlug,
+			CourseTitle:   a.CourseTitle,
+			LessonOrder:   a.LessonOrder,
+			LessonTitle:   a.LessonTitle,
+			FirstViewedAt: a.FirstViewedAt,
+			LastViewedAt:  a.LastViewedAt,
+			Completed:     a.Completed,
+			CompletedAt:   a.CompletedAt,
+		}
+	}
+
+	httpkit.WriteJSON(w, http.StatusOK, response)
 }
 
 // resolveContent lee slug + order de lección + order de contenido de la URL

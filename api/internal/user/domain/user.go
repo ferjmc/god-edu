@@ -84,6 +84,9 @@ type Repository interface {
 	GetByID(ctx context.Context, id int64) (User, error)
 	// MarkEmailVerified pone email_verified = true para el usuario dado.
 	MarkEmailVerified(ctx context.Context, id int64) error
+	// SetEmailVerified fija email_verified al valor dado (en ambos
+	// sentidos). La usa el panel admin para corregir la verificación a mano.
+	SetEmailVerified(ctx context.Context, id int64, verified bool) error
 	// UpdatePasswordHash reemplaza el password_hash de un usuario (flujo de
 	// reset de password).
 	UpdatePasswordHash(ctx context.Context, id int64, passwordHash string) error

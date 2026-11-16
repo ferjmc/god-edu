@@ -22,7 +22,8 @@ import (
 // la API.
 const uniqueViolation = "23505"
 
-// Repository implementa domain.Repository contra lessons y lesson_content.
+// Repository implementa domain.Repository contra lessons, lesson_content y
+// course_classes.
 // Van juntas en la misma implementación porque casi nunca se consultan por
 // separado: el contenido de una lección no tiene sentido sin la lección, y
 // viceversa. Los errores "no encontrado"/"ya existe" siguen siendo
@@ -38,16 +39,28 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-// ListByCourse devuelve la currícula de un curso: todas sus lecciones en
-// orden, con el estado de completado del usuario dado. El LEFT JOIN es a
-// propósito: un usuario sin ninguna fila en lesson_progress todavía tiene
-// que ver la lista completa, solo que con completed = false en todas.
+// lessonColumns asume los alias l (lessons) y cc (LEFT JOIN course_classes)
+// y va en el mismo orden que lee scanLesson.
+const lessonColumns = `l.id, l.course_id, l.class_id, cc.order_index, cc.title, COALESCE(NOT cc.published, false), l.title, l.order_index, l.created_at`
+
+func scanLesson(row pgx.Row) (domain.Lesson, error) {
+	var l domain.Lesson
+	err := row.Scan(&l.ID, &l.CourseID, &l.ClassID, &l.ClassOrder, &l.ClassTitle, &l.Hidden, &l.Title, &l.OrderIndex, &l.CreatedAt)
+	return l, err
+}
+
+// ListByCourse devuelve la currícula de un curso: sus lecciones visibles
+// (sin clase o en una clase publicada) en orden, con el estado de
+// completado del usuario dado. El LEFT JOIN es a propósito: un usuario sin
+// ninguna fila en lesson_progress todavía tiene que ver la lista completa,
+// solo que con completed = false en todas.
 func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) ([]domain.LessonSummary, error) {
 	const q = `
-		SELECT l.order_index, l.title, COALESCE(lp.completed, false)
+		SELECT l.order_index, l.title, COALESCE(lp.completed, false), cc.order_index, cc.title
 		FROM lessons l
 		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $2
-		WHERE l.course_id = $1
+		LEFT JOIN course_classes cc ON cc.id = l.class_id
+		WHERE l.course_id = $1 AND (l.class_id IS NULL OR cc.published)
 		ORDER BY l.order_index
 	`
 	rows, err := r.pool.Query(ctx, q, courseID, userID)
@@ -59,7 +72,7 @@ func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) (
 	var lessons []domain.LessonSummary
 	for rows.Next() {
 		var l domain.LessonSummary
-		if err := rows.Scan(&l.Order, &l.Title, &l.Completed); err != nil {
+		if err := rows.Scan(&l.Order, &l.Title, &l.Completed, &l.ClassOrder, &l.ClassTitle); err != nil {
 			return nil, fmt.Errorf("lesson: leyendo lección del curso %d: %w", courseID, err)
 		}
 		lessons = append(lessons, l)
@@ -71,6 +84,24 @@ func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) (
 	return lessons, nil
 }
 
+// HasCompletedAll indica si el usuario completó todas las lecciones del
+// curso. A diferencia de ListByCourse no filtra clases sin publicar, a
+// propósito: es el chequeo del certificado, y una lección oculta (que el
+// alumno no puede completar) tiene que bloquearlo.
+func (r *Repository) HasCompletedAll(ctx context.Context, courseID, userID int64) (bool, error) {
+	const q = `
+		SELECT COUNT(l.id) > 0 AND COALESCE(bool_and(COALESCE(lp.completed, false)), false)
+		FROM lessons l
+		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $2
+		WHERE l.course_id = $1
+	`
+	var all bool
+	if err := r.pool.QueryRow(ctx, q, courseID, userID).Scan(&all); err != nil {
+		return false, fmt.Errorf("lesson: verificando curso %d completo para usuario %d: %w", courseID, userID, err)
+	}
+	return all, nil
+}
+
 // ListAllByCourse devuelve todas las lecciones de un curso en orden, sin el
 // estado de completado de ningún usuario en particular — a diferencia de
 // ListByCourse, que arma la currícula para un usuario logueado. La usa el
@@ -78,10 +109,11 @@ func (r *Repository) ListByCourse(ctx context.Context, courseID, userID int64) (
 // que preguntarle).
 func (r *Repository) ListAllByCourse(ctx context.Context, courseID int64) ([]domain.Lesson, error) {
 	const q = `
-		SELECT id, course_id, title, order_index, created_at
-		FROM lessons
-		WHERE course_id = $1
-		ORDER BY order_index
+		SELECT ` + lessonColumns + `
+		FROM lessons l
+		LEFT JOIN course_classes cc ON cc.id = l.class_id
+		WHERE l.course_id = $1
+		ORDER BY l.order_index
 	`
 	rows, err := r.pool.Query(ctx, q, courseID)
 	if err != nil {
@@ -91,8 +123,8 @@ func (r *Repository) ListAllByCourse(ctx context.Context, courseID int64) ([]dom
 
 	var lessons []domain.Lesson
 	for rows.Next() {
-		var l domain.Lesson
-		if err := rows.Scan(&l.ID, &l.CourseID, &l.Title, &l.OrderIndex, &l.CreatedAt); err != nil {
+		l, err := scanLesson(rows)
+		if err != nil {
 			return nil, fmt.Errorf("lesson: leyendo lección del curso %d: %w", courseID, err)
 		}
 		lessons = append(lessons, l)
@@ -110,13 +142,12 @@ func (r *Repository) ListAllByCourse(ctx context.Context, courseID int64) ([]dom
 // ni depender de que cada lección tenga un slug propio.
 func (r *Repository) GetByCourseAndOrder(ctx context.Context, courseID int64, order int) (domain.Lesson, error) {
 	const q = `
-		SELECT id, course_id, title, order_index, created_at
-		FROM lessons
-		WHERE course_id = $1 AND order_index = $2
+		SELECT ` + lessonColumns + `
+		FROM lessons l
+		LEFT JOIN course_classes cc ON cc.id = l.class_id
+		WHERE l.course_id = $1 AND l.order_index = $2
 	`
-	var l domain.Lesson
-	err := r.pool.QueryRow(ctx, q, courseID, order).
-		Scan(&l.ID, &l.CourseID, &l.Title, &l.OrderIndex, &l.CreatedAt)
+	l, err := scanLesson(r.pool.QueryRow(ctx, q, courseID, order))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Lesson{}, db.ErrNotFound
@@ -178,17 +209,77 @@ func (r *Repository) IsCompleted(ctx context.Context, lessonID, userID int64) (b
 // solo refrescan completed_at — nunca hay más de una fila de progreso por
 // usuario y lección. No hay "desmarcar": una vez completada, se asume que
 // consumir la lección de nuevo no le resta valor a haberla terminado antes.
+// Completar implica haberla visto: si no había vista registrada, se fija
+// también first_viewed_at.
 func (r *Repository) MarkCompleted(ctx context.Context, lessonID, userID int64) error {
 	const q = `
-		INSERT INTO lesson_progress (user_id, lesson_id, completed, completed_at)
-		VALUES ($1, $2, true, now())
+		INSERT INTO lesson_progress (user_id, lesson_id, completed, completed_at, first_viewed_at, last_viewed_at)
+		VALUES ($1, $2, true, now(), now(), now())
 		ON CONFLICT (user_id, lesson_id)
-		DO UPDATE SET completed = true, completed_at = now()
+		DO UPDATE SET
+			completed = true,
+			completed_at = now(),
+			first_viewed_at = COALESCE(lesson_progress.first_viewed_at, now()),
+			last_viewed_at = COALESCE(lesson_progress.last_viewed_at, now())
 	`
 	if _, err := r.pool.Exec(ctx, q, userID, lessonID); err != nil {
 		return fmt.Errorf("lesson: marcando lección %d completada para usuario %d: %w", lessonID, userID, err)
 	}
 	return nil
+}
+
+// RecordView registra que el usuario abrió la lección. Mismo upsert sobre
+// UNIQUE(user_id, lesson_id) que MarkCompleted: la primera vez inserta una
+// fila con completed = false; las siguientes solo refrescan last_viewed_at
+// y nunca tocan completed.
+func (r *Repository) RecordView(ctx context.Context, lessonID, userID int64) error {
+	const q = `
+		INSERT INTO lesson_progress (user_id, lesson_id, completed, first_viewed_at, last_viewed_at)
+		VALUES ($1, $2, false, now(), now())
+		ON CONFLICT (user_id, lesson_id)
+		DO UPDATE SET
+			first_viewed_at = COALESCE(lesson_progress.first_viewed_at, now()),
+			last_viewed_at = now()
+	`
+	if _, err := r.pool.Exec(ctx, q, userID, lessonID); err != nil {
+		return fmt.Errorf("lesson: registrando vista de lección %d para usuario %d: %w", lessonID, userID, err)
+	}
+	return nil
+}
+
+// ListActivityByUser devuelve las lecciones que el usuario abrió o
+// completó, con su curso. Incluye cursos despublicados a propósito: es una
+// vista de admin sobre lo que el usuario hizo, no sobre lo que hoy puede ver.
+func (r *Repository) ListActivityByUser(ctx context.Context, userID int64) ([]domain.UserLessonActivity, error) {
+	const q = `
+		SELECT c.slug, c.title, l.order_index, l.title,
+			lp.first_viewed_at, lp.last_viewed_at, lp.completed, lp.completed_at
+		FROM lesson_progress lp
+		JOIN lessons l ON l.id = lp.lesson_id
+		JOIN courses c ON c.id = l.course_id
+		WHERE lp.user_id = $1
+			AND (lp.completed OR lp.first_viewed_at IS NOT NULL)
+		ORDER BY c.title, l.order_index
+	`
+	rows, err := r.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, fmt.Errorf("lesson: listando actividad del usuario %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	var activity []domain.UserLessonActivity
+	for rows.Next() {
+		var a domain.UserLessonActivity
+		if err := rows.Scan(&a.CourseSlug, &a.CourseTitle, &a.LessonOrder, &a.LessonTitle,
+			&a.FirstViewedAt, &a.LastViewedAt, &a.Completed, &a.CompletedAt); err != nil {
+			return nil, fmt.Errorf("lesson: leyendo actividad del usuario %d: %w", userID, err)
+		}
+		activity = append(activity, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lesson: iterando actividad del usuario %d: %w", userID, err)
+	}
+	return activity, nil
 }
 
 // CreateLesson inserta una lección nueva bajo un curso. Devuelve
@@ -197,11 +288,11 @@ func (r *Repository) MarkCompleted(ctx context.Context, lessonID, userID int64) 
 // lecciones no pueden pelear por el mismo lugar en la currícula).
 func (r *Repository) CreateLesson(ctx context.Context, l domain.Lesson) (domain.Lesson, error) {
 	const q = `
-		INSERT INTO lessons (course_id, title, order_index)
-		VALUES ($1, $2, $3)
+		INSERT INTO lessons (course_id, class_id, title, order_index)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at
 	`
-	err := r.pool.QueryRow(ctx, q, l.CourseID, l.Title, l.OrderIndex).Scan(&l.ID, &l.CreatedAt)
+	err := r.pool.QueryRow(ctx, q, l.CourseID, l.ClassID, l.Title, l.OrderIndex).Scan(&l.ID, &l.CreatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -210,6 +301,130 @@ func (r *Repository) CreateLesson(ctx context.Context, l domain.Lesson) (domain.
 		return domain.Lesson{}, fmt.Errorf("lesson: creando lección: %w", err)
 	}
 	return l, nil
+}
+
+// SetLessonClass asigna una lección a una clase (o la deja sin clase si
+// classID es nil). No valida que la clase sea del mismo curso — eso lo
+// garantiza lessonapp.Service, que solo resuelve clases dentro del curso
+// de la lección.
+func (r *Repository) SetLessonClass(ctx context.Context, lessonID int64, classID *int64) error {
+	const q = `UPDATE lessons SET class_id = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, classID, lessonID)
+	if err != nil {
+		return fmt.Errorf("lesson: asignando clase a lección %d: %w", lessonID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
+// ListClasses devuelve las clases de un curso en orden.
+func (r *Repository) ListClasses(ctx context.Context, courseID int64) ([]domain.Class, error) {
+	const q = `
+		SELECT id, course_id, title, order_index, published, created_at
+		FROM course_classes
+		WHERE course_id = $1
+		ORDER BY order_index
+	`
+	rows, err := r.pool.Query(ctx, q, courseID)
+	if err != nil {
+		return nil, fmt.Errorf("lesson: listando clases del curso %d: %w", courseID, err)
+	}
+	defer rows.Close()
+
+	var classes []domain.Class
+	for rows.Next() {
+		var c domain.Class
+		if err := rows.Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.Published, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("lesson: leyendo clase del curso %d: %w", courseID, err)
+		}
+		classes = append(classes, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("lesson: iterando clases del curso %d: %w", courseID, err)
+	}
+	return classes, nil
+}
+
+// GetClassByCourseAndOrder busca una clase por curso + order_index — mismo
+// esquema de identificador público que las lecciones.
+func (r *Repository) GetClassByCourseAndOrder(ctx context.Context, courseID int64, order int) (domain.Class, error) {
+	const q = `
+		SELECT id, course_id, title, order_index, published, created_at
+		FROM course_classes
+		WHERE course_id = $1 AND order_index = $2
+	`
+	var c domain.Class
+	err := r.pool.QueryRow(ctx, q, courseID, order).
+		Scan(&c.ID, &c.CourseID, &c.Title, &c.OrderIndex, &c.Published, &c.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Class{}, db.ErrNotFound
+		}
+		return domain.Class{}, fmt.Errorf("lesson: leyendo clase %d/%d: %w", courseID, order, err)
+	}
+	return c, nil
+}
+
+// CreateClass inserta una clase bajo un curso. Devuelve db.ErrConflict si
+// el order_index ya está usado en el curso. La clase nace sin publicar
+// (DEFAULT de la columna).
+func (r *Repository) CreateClass(ctx context.Context, c domain.Class) (domain.Class, error) {
+	const q = `
+		INSERT INTO course_classes (course_id, title, order_index)
+		VALUES ($1, $2, $3)
+		RETURNING id, published, created_at
+	`
+	err := r.pool.QueryRow(ctx, q, c.CourseID, c.Title, c.OrderIndex).Scan(&c.ID, &c.Published, &c.CreatedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return domain.Class{}, db.ErrConflict
+		}
+		return domain.Class{}, fmt.Errorf("lesson: creando clase: %w", err)
+	}
+	return c, nil
+}
+
+// UpdateClassTitle renombra una clase.
+func (r *Repository) UpdateClassTitle(ctx context.Context, classID int64, title string) error {
+	const q = `UPDATE course_classes SET title = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, title, classID)
+	if err != nil {
+		return fmt.Errorf("lesson: renombrando clase %d: %w", classID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
+// SetClassPublished publica u oculta una clase.
+func (r *Repository) SetClassPublished(ctx context.Context, classID int64, published bool) error {
+	const q = `UPDATE course_classes SET published = $1 WHERE id = $2`
+	tag, err := r.pool.Exec(ctx, q, published, classID)
+	if err != nil {
+		return fmt.Errorf("lesson: cambiando publicación de clase %d: %w", classID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteClass borra una clase. Sus lecciones no se borran: quedan sin
+// clase por el ON DELETE SET NULL de lessons.class_id.
+func (r *Repository) DeleteClass(ctx context.Context, classID int64) error {
+	const q = `DELETE FROM course_classes WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, classID)
+	if err != nil {
+		return fmt.Errorf("lesson: borrando clase %d: %w", classID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return db.ErrNotFound
+	}
+	return nil
 }
 
 // CreateContent inserta una pieza de contenido bajo una lección. Igual que

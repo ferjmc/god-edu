@@ -261,7 +261,8 @@ func (r *Repository) SetCertificateEnabled(ctx context.Context, slug string, ena
 // más la simplicidad de una query que la de armarlo con varias llamadas al
 // repo. El filtro de rol va acá, en el WHERE — no reutiliza Course.VisibleTo
 // en memoria porque ListPublished/ListAll no llenan VisibleRoles hoy (solo
-// GetBySlug/GetBySlugAny lo hacen).
+// GetBySlug/GetBySlugAny lo hacen). Las lecciones de clases sin publicar no
+// cuentan, igual que en la currícula del alumno.
 func (r *Repository) ListVisibleWithProgress(ctx context.Context, userID int64, role userdomain.UserRole) ([]domain.CourseProgress, error) {
 	const q = `
 		SELECT
@@ -270,7 +271,8 @@ func (r *Repository) ListVisibleWithProgress(ctx context.Context, userID int64, 
 			COUNT(lp.id) FILTER (WHERE lp.completed) AS completed_lessons,
 			MIN(l.order_index) FILTER (WHERE lp.completed IS NOT TRUE) AS next_lesson_order
 		FROM courses c
-		LEFT JOIN lessons l ON l.course_id = c.id
+		LEFT JOIN (lessons l LEFT JOIN course_classes cc ON cc.id = l.class_id)
+			ON l.course_id = c.id AND (l.class_id IS NULL OR cc.published)
 		LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = $1
 		WHERE c.published = true
 			AND (

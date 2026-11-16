@@ -4,12 +4,21 @@ import { $auth, initAuth } from "../../stores/auth";
 import { listAdminCourses, type AdminCourse } from "../../lib/api/admin";
 import { ApiError } from "../../lib/api/client";
 import NewCourseForm from "./NewCourseForm";
+import IslandErrorBoundary from "../IslandErrorBoundary";
+
+export default function AdminCoursesList() {
+	return (
+		<IslandErrorBoundary>
+			<AdminCoursesListContent />
+		</IslandErrorBoundary>
+	);
+}
 
 /** Gates the admin course list behind session + ADMIN role. Same pattern as
  * CourseDetail: the page (admin/cursos.astro) is a static shell with no
  * data of its own, this island resolves auth and fetches everything
  * client-side — the HTML never contains admin data for anyone else. */
-export default function AdminCoursesList() {
+function AdminCoursesListContent() {
 	const auth = useStore($auth);
 	const [courses, setCourses] = useState<AdminCourse[] | null>(null);
 	const [error, setError] = useState<string | null>(null);

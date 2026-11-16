@@ -133,3 +133,38 @@ func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// updateUserVerificationRequest usa *bool para distinguir "verified: false"
+// de un body que directamente no trae el campo.
+type updateUserVerificationRequest struct {
+	Verified *bool `json:"verified"`
+}
+
+// UpdateUserVerification marca o desmarca la cuenta de un usuario como
+// verificada. Des-verificar deja la cuenta reclamable por OAuth (ver
+// postgres.Repository.ClaimByOAuth): quien la reclama tiene que probar
+// ser dueño del email ante Google/Facebook, así que es aceptable.
+func (h *AdminHandler) UpdateUserVerification(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "id de usuario inválido")
+		return
+	}
+
+	var req updateUserVerificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Verified == nil {
+		httpkit.WriteError(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+
+	if err := h.Users.SetEmailVerified(r.Context(), id, *req.Verified); err != nil {
+		if httpkit.HandleNotFound(w, err, "usuario no encontrado") {
+			return
+		}
+		log.Printf("admin: actualizando verificación de usuario %d: %v", id, err)
+		httpkit.WriteError(w, http.StatusInternalServerError, "no se pudo actualizar la verificación")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

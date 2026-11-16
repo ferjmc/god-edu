@@ -225,6 +225,10 @@ func newRouter(
 		r.Patch("/{slug}", courseAdminHandler.SetPublished)
 		r.Delete("/{slug}", courseAdminHandler.DeleteCourse)
 		r.Patch("/{slug}/certificate", courseAdminHandler.SetCertificateEnabled)
+		r.Post("/{slug}/classes", lessonAdminHandler.CreateClass)
+		r.Put("/{slug}/classes/{classOrder}", lessonAdminHandler.UpdateClass)
+		r.Patch("/{slug}/classes/{classOrder}", lessonAdminHandler.SetClassPublished)
+		r.Delete("/{slug}/classes/{classOrder}", lessonAdminHandler.DeleteClass)
 		r.Post("/{slug}/lessons", lessonAdminHandler.CreateLesson)
 		r.Put("/{slug}/lessons/{order}", lessonAdminHandler.UpdateLesson)
 		r.Delete("/{slug}/lessons/{order}", lessonAdminHandler.DeleteLesson)
@@ -242,6 +246,8 @@ func newRouter(
 
 		r.Get("/", userAdminHandler.ListUsers)
 		r.Patch("/{id}", userAdminHandler.UpdateUserRole)
+		r.Patch("/{id}/verification", userAdminHandler.UpdateUserVerification)
+		r.Get("/{id}/lessons", lessonAdminHandler.UserLessonActivity)
 	})
 
 	r.Route("/auth", func(r chi.Router) {

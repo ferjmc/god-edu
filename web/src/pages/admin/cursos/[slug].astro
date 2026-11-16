@@ -9,19 +9,19 @@
 // en build time que valga la pena prerenderizar.
 export const prerender = false;
 
-import Layout from "../../../layouts/Layout.astro";
+import DashboardLayout from "../../../layouts/DashboardLayout.astro";
 import AdminCourseEditor from "../../../components/admin/AdminCourseEditor";
 
 const { slug } = Astro.params as { slug: string };
 ---
 
-<Layout title="Editar curso — Comunidad La Divina Misericordia">
-	<main class="mx-auto max-w-[1180px] px-6 py-16">
+<DashboardLayout title="Editar curso — Comunidad La Divina Misericordia">
+	<div class="mx-auto max-w-[1180px] px-6 py-10 md:py-16">
 		<a href="/admin/cursos" class="font-ui text-sm text-marian-blue hover:text-marian-blue-deep">← Volver a cursos</a>
 		<h1 class="mt-4 font-display text-3xl text-marian-blue-deep">Editar curso</h1>
 
 		<div class="mt-10">
 			<AdminCourseEditor slug={slug} client:load />
 		</div>
-	</main>
-</Layout>
+	</div>
+</DashboardLayout>
