@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5/middleware"
+
 	"github.com/ferjmc/god-edu/api/db"
 )
 
@@ -37,13 +39,16 @@ func RequireNonEmpty(w http.ResponseWriter, value, label string) (string, bool) 
 	return value, true
 }
 
-// ClientIP devuelve la IP del cliente a partir de r.RemoteAddr, que para
-// este momento ya fue reescrito por middleware.RealIP (ver comentario en
-// main.go) a partir de X-Forwarded-For/X-Real-IP. Si por algo RemoteAddr no
-// tiene el formato host:port esperado, devuelve el valor crudo tal cual en
-// vez de fallar — nunca debería pasar en producción detrás del túnel, pero
-// mejor no romper el registro por esto.
+// ClientIP devuelve la IP del cliente: la que dejó en el contexto
+// middleware.ClientIPFromHeader a partir de CF-Connecting-IP (ver comentario
+// en main.go). Sin ese header — desarrollo local, sin Cloudflare adelante —
+// cae a r.RemoteAddr. Si por algo RemoteAddr no tiene el formato host:port
+// esperado, devuelve el valor crudo tal cual en vez de fallar: mejor no
+// romper el registro por esto.
 func ClientIP(r *http.Request) string {
+	if ip := middleware.GetClientIP(r.Context()); ip != "" {
+		return ip
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

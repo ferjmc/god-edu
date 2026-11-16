@@ -2,11 +2,75 @@ package httpkit
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5/middleware"
+
 	"github.com/ferjmc/god-edu/api/db"
 )
+
+// TestClientIP pasa el request por el mismo middleware que usa main.go: lo
+// que importa es que un header que controla el cliente (X-Forwarded-For)
+// nunca decida la IP.
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "detrás de Cloudflare usa CF-Connecting-IP",
+			headers: map[string]string{"CF-Connecting-IP": "203.0.113.7"},
+			want:    "203.0.113.7",
+		},
+		{
+			name: "ignora un X-Forwarded-For falsificado",
+			headers: map[string]string{
+				"CF-Connecting-IP": "203.0.113.7",
+				"X-Forwarded-For":  "198.51.100.99",
+			},
+			want: "203.0.113.7",
+		},
+		{
+			name: "sin Cloudflare cae a RemoteAddr, no a headers del cliente",
+			headers: map[string]string{
+				"X-Forwarded-For": "198.51.100.99",
+				"X-Real-IP":       "198.51.100.99",
+				"True-Client-IP":  "198.51.100.99",
+			},
+			want: "192.0.2.1",
+		},
+		{
+			name:    "CF-Connecting-IP inválido cae a RemoteAddr",
+			headers: map[string]string{"CF-Connecting-IP": "no-es-una-ip"},
+			want:    "192.0.2.1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got string
+			handler := middleware.ClientIPFromHeader("CF-Connecting-IP")(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					got = ClientIP(r)
+				}),
+			)
+
+			// httptest.NewRequest deja RemoteAddr en 192.0.2.1:1234.
+			req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			if got != tt.want {
+				t.Fatalf("esperaba %q, recibí %q", tt.want, got)
+			}
+		})
+	}
+}
 
 func TestRequireNonEmpty(t *testing.T) {
 	w := httptest.NewRecorder()

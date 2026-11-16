@@ -168,14 +168,17 @@ func newRouter(
 	jwtManager *auth.JWTManager,
 ) http.Handler {
 	r := chi.NewRouter()
-	// RealIP primero: sin esto, detrás del proxy de Coolify/Caddy todos los
-	// requests llegan con el mismo r.RemoteAddr (el del proxy), y el rate
-	// limiting de más abajo terminaría limitando a todos los usuarios como
-	// si fueran uno solo. Lee X-Forwarded-For/X-Real-IP y confía en ellos
-	// sin validar — asumible acá porque la API nunca queda expuesta
-	// directamente a internet, solo detrás del proxy (si eso cambia
-	// alguna vez, revisar esto).
-	r.Use(middleware.RealIP)
+	// IP del cliente primero: la API solo es alcanzable a través de
+	// Cloudflare Tunnel, así que r.RemoteAddr es siempre el de cloudflared y
+	// sin esto el rate limiting de más abajo limitaría a todos los usuarios
+	// como si fueran uno solo. Se toma de CF-Connecting-IP, que Cloudflare
+	// sobrescribe en cada request. No se usa middleware.RealIP: confía en
+	// X-Forwarded-For, que el cliente puede mandar con cualquier valor, y
+	// alcanzaba con rotarlo para saltear el rate limiting y falsear el
+	// signup_ip. Se lee con httpkit.ClientIP. Si la API alguna vez queda
+	// expuesta sin Cloudflare adelante, revisar esto: el header pasaría a
+	// ser controlable por el cliente.
+	r.Use(middleware.ClientIPFromHeader("CF-Connecting-IP"))
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
@@ -281,7 +284,11 @@ func rateLimit(requests int, window time.Duration) func(http.Handler) http.Handl
 	return httprate.Limit(
 		requests,
 		window,
-		httprate.WithKeyFuncs(httprate.KeyByIP),
+		// No httprate.KeyByIP: ese lee r.RemoteAddr, que acá es siempre
+		// cloudflared. CanonicalizeIP agrupa IPv6 por /64, igual que KeyByIP.
+		httprate.WithKeyFuncs(func(r *http.Request) (string, error) {
+			return httprate.CanonicalizeIP(httpkit.ClientIP(r)), nil
+		}),
 		httprate.WithLimitHandler(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
