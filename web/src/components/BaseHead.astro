@@ -1,0 +1,21 @@
+---
+// Contenido de <head> compartido por Layout y DashboardLayout: íconos,
+// manifest de la PWA y metadatos. La app es instalable solo con el manifest;
+// a propósito no hay service worker (nada se cachea offline).
+interface Props {
+	title: string;
+	description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<meta charset="utf-8" />
+<link rel="icon" href="/favicon.ico" sizes="48x48" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#1b2a6b" />
+<meta name="viewport" content="width=device-width" />
+<meta name="description" content={description} />
+<meta name="generator" content={Astro.generator} />
+<title>{title}</title>
