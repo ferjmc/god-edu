@@ -133,7 +133,7 @@ func main() {
 	userAdminHandler := &userhttp.AdminHandler{Users: users}
 	certificateHandler := &certhttp.CertificateHandler{Certificates: certificates}
 
-	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, courseAdminHandler, lessonAdminHandler, userAdminHandler, certificateHandler, users, jwtManager)
+	r := newRouter(cfg, authHandler, oauthHandler, courseHandler, lessonHandler, courseAdminHandler, lessonAdminHandler, userAdminHandler, certificateHandler, users, jwtManager, pool)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -166,6 +166,7 @@ func newRouter(
 	certificateHandler *certhttp.CertificateHandler,
 	users *userapp.Service,
 	jwtManager *auth.JWTManager,
+	dbPinger httpkit.Pinger,
 ) http.Handler {
 	r := chi.NewRouter()
 	// IP del cliente primero: la API solo es alcanzable a través de
@@ -189,7 +190,7 @@ func newRouter(
 		MaxAge:           300,
 	}))
 
-	r.Get("/health", httpkit.Health)
+	r.Get("/health", httpkit.Health(dbPinger))
 
 	// Verificación pública de certificados: sin sesión a propósito — quien
 	// escanea un QR o recibe un link de certificado no necesariamente tiene

@@ -5,12 +5,15 @@
 package httpkit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 
@@ -67,10 +70,26 @@ func HandleNotFound(w http.ResponseWriter, err error, notFoundMsg string) bool {
 	return false
 }
 
-// Health responds with a simple JSON status payload, used for uptime checks
-// and to confirm the API is reachable during local development.
-func Health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+// Pinger es lo único que Health necesita de la base: *pgxpool.Pool lo
+// cumple. Con una interfaz httpkit no importa pgx y se puede testear con un
+// fake.
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// Health responde {"status":"ok"} solo si la base contesta un ping; si no,
+// 503 {"status":"unavailable"}. El detalle del error va al log, nunca a la
+// respuesta (el endpoint es público). El timeout evita que una base colgada
+// deje colgado el chequeo de uptime.
+func Health(db Pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := db.Ping(ctx); err != nil {
+			log.Printf("health: falló el ping a la base: %v", err)
+			WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
 }

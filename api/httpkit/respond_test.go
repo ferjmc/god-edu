@@ -1,9 +1,11 @@
 package httpkit
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -85,6 +87,36 @@ func TestRequireNonEmpty(t *testing.T) {
 	value, ok := RequireNonEmpty(w2, "  hola  ", "título")
 	if !ok || value != "hola" {
 		t.Fatalf("esperaba ok=true y value recortado, recibí ok=%v value=%q", ok, value)
+	}
+}
+
+type fakePinger struct{ err error }
+
+func (f fakePinger) Ping(context.Context) error { return f.err }
+
+func TestHealth(t *testing.T) {
+	tests := []struct {
+		name       string
+		pingErr    error
+		wantStatus int
+		wantBody   string
+	}{
+		{name: "base activa", pingErr: nil, wantStatus: 200, wantBody: `{"status":"ok"}`},
+		{name: "base caída", pingErr: errors.New("connection refused"), wantStatus: 503, wantBody: `{"status":"unavailable"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			Health(fakePinger{err: tt.pingErr})(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("esperaba %d, recibí %d", tt.wantStatus, w.Code)
+			}
+			if got := strings.TrimSpace(w.Body.String()); got != tt.wantBody {
+				t.Fatalf("esperaba body %s, recibí %s", tt.wantBody, got)
+			}
+		})
 	}
 }
 
